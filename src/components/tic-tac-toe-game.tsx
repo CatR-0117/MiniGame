@@ -32,7 +32,12 @@ import {
   type RoundState,
   type ScoreState,
 } from "@/lib/game";
-import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  deleteJson,
+  getErrorMessage,
+  getJson,
+  postJson,
+} from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
@@ -287,7 +292,12 @@ export function TicTacToeGame({
         }
       } catch {
         if (isActive) {
+          forgetLobbySession(SESSION_STORAGE_KEY);
+          setLobby(null);
+          setPlayerId(null);
+          setJoinCode("");
           setError("Lobby is no longer available.");
+          onLobbyLeave?.();
         }
       }
     };
@@ -298,7 +308,7 @@ export function TicTacToeGame({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [lobby?.code, playMode]);
+  }, [lobby?.code, onLobbyLeave, playMode]);
 
   const localStatusText = useMemo(() => {
     if (round.winner) {
@@ -484,7 +494,20 @@ export function TicTacToeGame({
     window.setTimeout(() => setHasCopiedCode(false), 1_500);
   }
 
-  function handleLeaveLobby() {
+  async function handleLeaveLobby() {
+    const currentLobby = lobby;
+    const currentPlayerId = playerId;
+
+    if (currentLobby && currentPlayerId) {
+      await deleteJson<{ didCloseLobby: boolean }>(
+        `/api/tic-tac-toe/lobbies/${encodeURIComponent(currentLobby.code)}`,
+        {
+          playerId: currentPlayerId,
+          rejoinToken: sessionRejoinToken,
+        },
+      ).catch(() => undefined);
+    }
+
     forgetLobbySession(SESSION_STORAGE_KEY);
     onLobbyLeave?.();
     setLobby(null);

@@ -238,6 +238,40 @@ test("returning tic-tac-toe player can reclaim a full lobby", async ({
   expect(rejoined.lobby.players).toHaveLength(2);
 });
 
+test("tic-tac-toe lobby closes for the guest when the host leaves", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const creatorLobbyCode = page.locator(
+    'output[aria-label="Tic-Tac-Toe lobby code"]',
+  );
+  await expect(creatorLobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await creatorLobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+
+  const joiner = await context.newPage();
+  await joiner.goto("/");
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
+  await joiner.getByRole("button", { name: "Join Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Tic-Tac-Toe lobby code"]'),
+  ).toHaveText(code!);
+
+  await page.getByRole("button", { name: "Leave Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Tic-Tac-Toe lobby code"]'),
+  ).toHaveCount(0);
+  await expect(joiner.getByRole("button", { name: "Create Lobby" })).toBeVisible();
+});
+
 test("memory card lobby can be created, joined, and synced", async ({
   page,
   context,

@@ -24,6 +24,22 @@ export async function postJson<T>(
   return parseJsonResponse<T>(response);
 }
 
+export async function deleteJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  return parseJsonResponse<T>(response);
+}
+
 export function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }

@@ -26,7 +26,12 @@ import {
   type HangmanPublicPlayer,
   type HangmanPuzzle,
 } from "@/lib/hangman";
-import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  deleteJson,
+  getErrorMessage,
+  getJson,
+  postJson,
+} from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
@@ -257,7 +262,12 @@ export function HangmanGame({
         }
       } catch {
         if (isActive) {
+          forgetLobbySession(SESSION_STORAGE_KEY);
+          setLobby(null);
+          setPlayerId(null);
+          setJoinCode("");
           setError("Lobby is no longer available.");
+          onLobbyLeave?.();
         }
       }
     };
@@ -268,7 +278,7 @@ export function HangmanGame({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [lobby?.code, pendingLetter, playerId, playMode]);
+  }, [lobby?.code, onLobbyLeave, pendingLetter, playerId, playMode]);
 
   const handleSoloGuess = useCallback(
     (letter: string) => {
@@ -484,7 +494,20 @@ export function HangmanGame({
     window.setTimeout(() => setHasCopiedCode(false), 1_500);
   }
 
-  function handleLeaveLobby() {
+  async function handleLeaveLobby() {
+    const currentLobby = lobby;
+    const currentPlayerId = playerId;
+
+    if (currentLobby && currentPlayerId) {
+      await deleteJson<{ didCloseLobby: boolean }>(
+        `/api/hangman/lobbies/${encodeURIComponent(currentLobby.code)}`,
+        {
+          playerId: currentPlayerId,
+          rejoinToken: sessionRejoinToken,
+        },
+      ).catch(() => undefined);
+    }
+
     forgetLobbySession(SESSION_STORAGE_KEY);
     onLobbyLeave?.();
     setLobby(null);

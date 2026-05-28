@@ -361,6 +361,44 @@ export async function deleteTicTacToeLobbyByCode(code: string): Promise<void> {
   await deleteStoredLobby(normalizeLobbyCode(code), "tic-tac-toe");
 }
 
+export async function leaveTicTacToeLobbyByCode(
+  code: string,
+  playerId: string,
+  rejoinToken: string,
+): Promise<LobbyResult<{
+  didCloseLobby: boolean;
+}>> {
+  const lobbyResult = await getTicTacToeLobbyByCode(code);
+
+  if (!lobbyResult.ok) {
+    return lobbyResult;
+  }
+
+  const authResult = authorizeLobbyPlayer(lobbyResult.data.lobby, playerId);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  if (isHostPlayerLeaving(lobbyResult.data.lobby, playerId, rejoinToken)) {
+    await deleteTicTacToeLobbyByCode(code);
+
+    return {
+      ok: true,
+      data: {
+        didCloseLobby: true,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      didCloseLobby: false,
+    },
+  };
+}
+
 export async function hasTicTacToeLobbyByCode(code: string): Promise<boolean> {
   return hasStoredLobbyByCode(normalizeLobbyCode(code), "tic-tac-toe");
 }
@@ -492,4 +530,19 @@ function touchLobby(lobby: TicTacToeLobby, now: number): TicTacToeLobby {
     ...lobby,
     updatedAt: now,
   };
+}
+
+function isHostPlayerLeaving(
+  lobby: TicTacToeLobby,
+  playerId: string,
+  rejoinToken: string,
+): boolean {
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  return Boolean(
+    playerId === "X" &&
+      lobby.players[0]?.id === "X" &&
+      rejoinTokenHash &&
+      lobby.players[0].rejoinTokenHash === rejoinTokenHash,
+  );
 }

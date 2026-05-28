@@ -42,7 +42,12 @@ import {
   type MemoryPlayerId,
   type MemorySoloGame,
 } from "@/lib/memory";
-import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  deleteJson,
+  getErrorMessage,
+  getJson,
+  postJson,
+} from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
@@ -302,7 +307,12 @@ export function MemoryCardGame({
         }
       } catch {
         if (isActive) {
+          forgetLobbySession(SESSION_STORAGE_KEY);
+          setLobby(null);
+          setPlayerId(null);
+          setJoinCode("");
           setError("Lobby is no longer available.");
+          onLobbyLeave?.();
         }
       }
     };
@@ -313,7 +323,7 @@ export function MemoryCardGame({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [lobby?.code, playMode]);
+  }, [lobby?.code, onLobbyLeave, playMode]);
 
   useEffect(() => {
     if (soloGame.status !== "settling" || soloGame.pendingHideAt === null) {
@@ -495,7 +505,20 @@ export function MemoryCardGame({
     window.setTimeout(() => setHasCopiedCode(false), 1_500);
   }
 
-  function handleLeaveLobby() {
+  async function handleLeaveLobby() {
+    const currentLobby = lobby;
+    const currentPlayerId = playerId;
+
+    if (currentLobby && currentPlayerId) {
+      await deleteJson<{ didCloseLobby: boolean }>(
+        `/api/memory/lobbies/${encodeURIComponent(currentLobby.code)}`,
+        {
+          playerId: currentPlayerId,
+          rejoinToken: sessionRejoinToken,
+        },
+      ).catch(() => undefined);
+    }
+
     forgetLobbySession(SESSION_STORAGE_KEY);
     onLobbyLeave?.();
     setLobby(null);

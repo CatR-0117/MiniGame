@@ -280,6 +280,38 @@ export async function deleteHangmanLobbyByCode(code: string): Promise<void> {
   await deleteStoredLobby(normalizeLobbyCode(code), "hangman");
 }
 
+export async function leaveHangmanLobbyByCode(
+  code: string,
+  playerId: string,
+  rejoinToken: string,
+): Promise<LobbyResult<{
+  didCloseLobby: boolean;
+}>> {
+  const authResult = await getAuthorizedLobby(code, playerId);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  if (isHostPlayerLeaving(authResult.data.lobby, playerId, rejoinToken)) {
+    await deleteHangmanLobbyByCode(code);
+
+    return {
+      ok: true,
+      data: {
+        didCloseLobby: true,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      didCloseLobby: false,
+    },
+  };
+}
+
 export async function hasHangmanLobbyByCode(code: string): Promise<boolean> {
   return hasStoredLobbyByCode(normalizeLobbyCode(code), "hangman");
 }
@@ -358,4 +390,19 @@ function getLobbyViewResult(
       lobby: lobbyView,
     },
   };
+}
+
+function isHostPlayerLeaving(
+  lobby: HangmanLobby,
+  playerId: string,
+  rejoinToken: string,
+): boolean {
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  return Boolean(
+    playerId === "player-1" &&
+      lobby.players[0]?.id === "player-1" &&
+      rejoinTokenHash &&
+      lobby.players[0].rejoinTokenHash === rejoinTokenHash,
+  );
 }

@@ -275,6 +275,48 @@ export async function deleteLobbyByCode(code: string): Promise<void> {
   await deleteStoredLobby(normalizeLobbyCode(code), "memory");
 }
 
+export async function leaveLobbyByCode(
+  code: string,
+  playerId: string,
+  rejoinToken: string,
+): Promise<LobbyResult<{
+  didCloseLobby: boolean;
+}>> {
+  const lobbyResult = await getLobbyByCode(code);
+
+  if (!lobbyResult.ok) {
+    return lobbyResult;
+  }
+
+  const { lobby } = lobbyResult.data;
+
+  if (!isMemoryPlayerId(playerId)) {
+    return lobbyError(400, "Invalid player.");
+  }
+
+  if (!lobby.players.some((player) => player.id === playerId)) {
+    return lobbyError(403, "Player is not in this lobby.");
+  }
+
+  if (isHostPlayerLeaving(lobby, playerId, rejoinToken)) {
+    await deleteLobbyByCode(code);
+
+    return {
+      ok: true,
+      data: {
+        didCloseLobby: true,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      didCloseLobby: false,
+    },
+  };
+}
+
 export async function hasMemoryLobbyByCode(code: string): Promise<boolean> {
   return hasStoredLobbyByCode(normalizeLobbyCode(code), "memory");
 }
@@ -291,6 +333,21 @@ export async function isMemoryLobbyHost(
 
   return Boolean(
     lobby?.players[0]?.id === "player-1" &&
+      rejoinTokenHash &&
+      lobby.players[0].rejoinTokenHash === rejoinTokenHash,
+  );
+}
+
+function isHostPlayerLeaving(
+  lobby: MemoryLobby,
+  playerId: string,
+  rejoinToken: string,
+): boolean {
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  return Boolean(
+    playerId === "player-1" &&
+      lobby.players[0]?.id === "player-1" &&
       rejoinTokenHash &&
       lobby.players[0].rejoinTokenHash === rejoinTokenHash,
   );
