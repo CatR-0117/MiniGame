@@ -16,6 +16,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -131,6 +132,7 @@ export function TicTacToeGame({
   const [playerId, setPlayerId] = useState<Player | null>(null);
   const [localPlayerName, setLocalPlayerName] = useState("Player");
   const [localRejoinToken] = useState(() => createRejoinToken());
+  const autoJoinedCodeRef = useRef<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -196,10 +198,18 @@ export function TicTacToeGame({
       }
 
       if (autoJoinCode) {
+        if (autoJoinedCodeRef.current === autoJoinCode) {
+          setIsRestoring(false);
+          return;
+        }
+
+        autoJoinedCodeRef.current = autoJoinCode;
         setPlayMode("online");
 
         joinLobbyByCode(autoJoinCode)
           .catch(() => {
+            autoJoinedCodeRef.current = null;
+
             if (isActive) {
               setPlayerId(null);
             }

@@ -281,8 +281,18 @@ export function deleteLobbyByCode(code: string): void {
   getLobbyStore().delete(normalizeLobbyCode(code));
 }
 
+export function hasMemoryLobbyByCode(code: string): boolean {
+  const lobbies = getLobbyStore();
+  cleanupExpiredLobbies(lobbies, Date.now());
+
+  return lobbies.has(normalizeLobbyCode(code));
+}
+
 export function isMemoryLobbyHost(code: string, rejoinToken: string): boolean {
-  const lobby = getLobbyStore().get(normalizeLobbyCode(code));
+  const lobbies = getLobbyStore();
+  cleanupExpiredLobbies(lobbies, Date.now());
+
+  const lobby = lobbies.get(normalizeLobbyCode(code));
   const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
 
   return Boolean(

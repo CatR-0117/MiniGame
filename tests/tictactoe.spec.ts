@@ -102,6 +102,52 @@ test("tic-tac-toe lobby shows a five minute waiting countdown", async ({
   );
 });
 
+test("hangman lobby stays available while the waiting countdown is active", async ({
+  page,
+}) => {
+  const joinRequests: string[] = [];
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+
+    if (
+      request.method() === "POST" &&
+      /^\/api\/hangman\/lobbies\/[A-Z0-9]{6}\/join$/.test(url.pathname)
+    ) {
+      joinRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await page.getByRole("button", { name: /Hangman/ }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const lobbyCode = page.locator('output[aria-label="Hangman lobby code"]');
+
+  await expect(lobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await lobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+  await expect(page.getByLabel("Lobby wait countdown")).toHaveText(
+    /Waiting\s*(5:00|4:5\d)/,
+  );
+
+  await page.waitForTimeout(1_200);
+
+  await expect(lobbyCode).toHaveText(code!);
+  await expect(page.getByText("Lobby is no longer available.")).toHaveCount(0);
+  await expect(page.getByText("Lobby not found.")).toHaveCount(0);
+  expect(joinRequests.length).toBeLessThanOrEqual(1);
+
+  const statusResponse = await page.request.get(`/api/lobbies/${code}`);
+
+  expect(statusResponse.status()).toBe(200);
+  await expect(statusResponse.json()).resolves.toMatchObject({
+    game: "hangman",
+  });
+});
+
 test("host can switch lobby game after entering their name once", async ({
   page,
 }) => {
@@ -120,6 +166,19 @@ test("host can switch lobby game after entering their name once", async ({
   expect(code).toBeTruthy();
   await expect(page.getByLabel("Player Name")).toHaveCount(0);
 
+  const memoryJoinRequests: string[] = [];
+
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+
+    if (
+      request.method() === "POST" &&
+      url.pathname === `/api/memory/lobbies/${code}/join`
+    ) {
+      memoryJoinRequests.push(url.pathname);
+    }
+  });
+
   await page.getByRole("button", { name: /Memory Cards/ }).click();
 
   await expect(page.getByRole("heading", { name: "Memory Cards" })).toBeVisible();
@@ -127,6 +186,9 @@ test("host can switch lobby game after entering their name once", async ({
     code!,
   );
   await expect(page.getByText("Ada")).toBeVisible();
+
+  await page.waitForTimeout(1_200);
+  expect(memoryJoinRequests.length).toBeLessThanOrEqual(1);
 });
 
 test("returning tic-tac-toe player can reclaim a full lobby", async ({

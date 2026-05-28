@@ -12,7 +12,7 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   HANGMAN_ALPHABET,
@@ -99,6 +99,7 @@ export function HangmanGame({
   const [playerId, setPlayerId] = useState<HangmanPlayerId | null>(null);
   const [localPlayerName, setLocalPlayerName] = useState("Player");
   const [localRejoinToken] = useState(() => createRejoinToken());
+  const autoJoinedCodeRef = useRef<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -180,10 +181,18 @@ export function HangmanGame({
       }
 
       if (autoJoinCode) {
+        if (autoJoinedCodeRef.current === autoJoinCode) {
+          setIsRestoring(false);
+          return;
+        }
+
+        autoJoinedCodeRef.current = autoJoinCode;
         setPlayMode("lobby");
 
         joinLobbyByCode(autoJoinCode)
           .catch(() => {
+            autoJoinedCodeRef.current = null;
+
             if (isActive) {
               setPlayerId(null);
             }
@@ -226,7 +235,12 @@ export function HangmanGame({
   }, [autoJoinCode, initialPlayMode, joinLobbyByCode, refreshLobby]);
 
   useEffect(() => {
-    if (!lobby?.code || !playerId || playMode !== "lobby") {
+    if (
+      !lobby?.code ||
+      !playerId ||
+      playMode !== "lobby" ||
+      pendingLetter !== null
+    ) {
       return;
     }
 
@@ -254,7 +268,7 @@ export function HangmanGame({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [lobby?.code, playerId, playMode]);
+  }, [lobby?.code, pendingLetter, playerId, playMode]);
 
   const handleSoloGuess = useCallback(
     (letter: string) => {
@@ -279,17 +293,21 @@ export function HangmanGame({
 
   const handleLobbyGuess = useCallback(
     async (letter: string) => {
+      const normalizedLetter = normalizeHangmanLetter(letter);
+
       if (
+        !normalizedLetter ||
         !lobby ||
         !playerId ||
         lobby.status !== "playing" ||
         pendingLetter !== null ||
+        lobby.localGuessedLetters.includes(normalizedLetter) ||
         isLocalPlayerDone(lobby)
       ) {
         return;
       }
 
-      setPendingLetter(letter);
+      setPendingLetter(normalizedLetter);
       setError("");
 
       try {
@@ -297,7 +315,7 @@ export function HangmanGame({
           `/api/hangman/lobbies/${encodeURIComponent(lobby.code)}/guess`,
           {
             playerId,
-            letter,
+            letter: normalizedLetter,
           },
         );
 
@@ -960,7 +978,7 @@ function HangmanPlaySurface({
               disabled={isLetterDisabled(letter)}
               onClick={() => onGuess(letter)}
               className={cn(
-                "flex min-h-11 min-w-0 items-center justify-center rounded-md border text-base font-black transition",
+                "flex min-h-11 min-w-0 touch-manipulation select-none items-center justify-center rounded-md border text-base font-black transition",
                 isLetterCorrect(letter) &&
                   "border-emerald-200/60 bg-emerald-300/20 text-emerald-100",
                 isLetterMiss(letter) &&

@@ -20,7 +20,14 @@ import {
   Users,
   Waves,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import {
   createMemorySoloGame,
@@ -164,6 +171,7 @@ export function MemoryCardGame({
   const [playerId, setPlayerId] = useState<MemoryPlayerId | null>(null);
   const [localPlayerName, setLocalPlayerName] = useState("Player");
   const [localRejoinToken] = useState(() => createRejoinToken());
+  const autoJoinedCodeRef = useRef<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -223,10 +231,18 @@ export function MemoryCardGame({
       }
 
       if (autoJoinCode) {
+        if (autoJoinedCodeRef.current === autoJoinCode) {
+          setIsRestoring(false);
+          return;
+        }
+
+        autoJoinedCodeRef.current = autoJoinCode;
         setPlayMode("lobby");
 
         joinLobbyByCode(autoJoinCode)
           .catch(() => {
+            autoJoinedCodeRef.current = null;
+
             if (isActive) {
               setPlayerId(null);
             }

@@ -2,6 +2,7 @@ import type { HangmanLobbyView, HangmanPlayerId } from "@/lib/hangman";
 import {
   createHangmanLobbyForHostCode,
   deleteHangmanLobbyByCode,
+  hasHangmanLobbyByCode,
   isHangmanLobbyHost,
   joinHangmanLobbyByCode,
 } from "@/lib/hangman-lobbies";
@@ -9,12 +10,14 @@ import type { MemoryLobby, MemoryPlayerId } from "@/lib/memory";
 import {
   createLobbyForHostCode as createMemoryLobbyForHostCode,
   deleteLobbyByCode as deleteMemoryLobbyByCode,
+  hasMemoryLobbyByCode,
   isMemoryLobbyHost,
   joinLobbyByCode as joinMemoryLobbyByCode,
 } from "@/lib/memory-lobbies";
 import {
   createTicTacToeLobbyForHostCode,
   deleteTicTacToeLobbyByCode,
+  hasTicTacToeLobbyByCode,
   isTicTacToeLobbyHost,
   joinTicTacToeLobbyByCode,
   type TicTacToeLobby,
@@ -78,7 +81,11 @@ export function joinArcadeLobbyByCode(
 export function getArcadeLobbyStatusByCode(
   code: string,
 ): LobbyResult<ArcadeLobbyStatusData> {
-  const game = getArcadeLobbyGame(code) ?? findArcadeLobbyGameByHost(code, "");
+  const knownGame = getArcadeLobbyGame(code);
+  const game =
+    knownGame && hasKnownArcadeLobby(knownGame, code)
+      ? knownGame
+      : findArcadeLobbyGameByCode(code);
 
   if (!game) {
     return lobbyError(404, "Lobby not found.");
@@ -215,6 +222,24 @@ function deleteKnownArcadeLobby(game: ArcadeLobbyGame, code: string): void {
   }
 
   deleteHangmanLobbyByCode(code);
+}
+
+function hasKnownArcadeLobby(game: ArcadeLobbyGame, code: string): boolean {
+  if (game === "tic-tac-toe") {
+    return hasTicTacToeLobbyByCode(code);
+  }
+
+  if (game === "memory") {
+    return hasMemoryLobbyByCode(code);
+  }
+
+  return hasHangmanLobbyByCode(code);
+}
+
+function findArcadeLobbyGameByCode(code: string): ArcadeLobbyGame | null {
+  const games: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
+
+  return games.find((game) => hasKnownArcadeLobby(game, code)) ?? null;
 }
 
 function findArcadeLobbyGameByHost(

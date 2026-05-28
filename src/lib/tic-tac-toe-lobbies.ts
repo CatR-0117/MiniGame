@@ -361,11 +361,21 @@ export function deleteTicTacToeLobbyByCode(code: string): void {
   getLobbyStore().delete(normalizeLobbyCode(code));
 }
 
+export function hasTicTacToeLobbyByCode(code: string): boolean {
+  const lobbies = getLobbyStore();
+  cleanupExpiredLobbies(lobbies, Date.now());
+
+  return lobbies.has(normalizeLobbyCode(code));
+}
+
 export function isTicTacToeLobbyHost(
   code: string,
   rejoinToken: string,
 ): boolean {
-  const lobby = getLobbyStore().get(normalizeLobbyCode(code));
+  const lobbies = getLobbyStore();
+  cleanupExpiredLobbies(lobbies, Date.now());
+
+  const lobby = lobbies.get(normalizeLobbyCode(code));
   const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
 
   return Boolean(
