@@ -12,10 +12,12 @@ import {
   Layers,
   LogIn,
   LogOut,
+  Moon,
   Plus,
   RefreshCw,
   Sparkles,
   Star,
+  Sun,
   Trophy,
   Users,
   Waves,
@@ -117,11 +119,23 @@ const CARD_FACES: Record<MemoryCardValue, CardFace> = {
     className: "border-rose-200/60 bg-rose-300/15 text-rose-100",
     iconClassName: "text-rose-200",
   },
+  moon: {
+    label: "Moon",
+    icon: Moon,
+    className: "border-indigo-200/60 bg-indigo-300/15 text-indigo-100",
+    iconClassName: "text-indigo-200",
+  },
   star: {
     label: "Star",
     icon: Star,
     className: "border-teal-200/60 bg-teal-300/15 text-teal-100",
     iconClassName: "text-teal-200",
+  },
+  sun: {
+    label: "Sun",
+    icon: Sun,
+    className: "border-amber-200/60 bg-amber-300/15 text-amber-100",
+    iconClassName: "text-amber-200",
   },
   waves: {
     label: "Waves",
@@ -1109,6 +1123,7 @@ function PlayerScorePanel({
           <p className="truncate text-base font-black text-white">
             {player.name}
           </p>
+          {player.id === "player-1" ? <HostBadge /> : null}
           <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
             {getPlayerStateText(player, isLocal, isCurrent, status)}
           </p>
@@ -1129,6 +1144,14 @@ function WaitingPlayerPanel() {
         Waiting
       </p>
     </div>
+  );
+}
+
+function HostBadge() {
+  return (
+    <span className="mt-1 inline-flex w-fit rounded-md border border-teal-200/40 bg-teal-200/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-teal-100">
+      Host
+    </span>
   );
 }
 

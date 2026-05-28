@@ -60,6 +60,7 @@ test("tic-tac-toe lobby can be created, joined, and synced", async ({
   const code = (await creatorLobbyCode.textContent())?.trim();
 
   expect(code).toBeTruthy();
+  await expect(page.getByText("Host")).toBeVisible();
   await expect(page.getByText("Ready to play")).toBeVisible();
   await page.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Waiting for Player O")).toBeVisible();
@@ -317,8 +318,22 @@ test("memory card lobby can be created, joined, and synced", async ({
   const code = (await creatorLobbyCode.textContent())?.trim();
 
   expect(code).toBeTruthy();
+  await expect(page.getByText("Host")).toBeVisible();
   await expect(page.getByText("Ready to play")).toBeVisible();
-  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  const readyPath = `/api/memory/lobbies/${code}/ready`;
+
+  await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+
+      return (
+        response.request().method() === "POST" &&
+        url.pathname === readyPath &&
+        response.ok()
+      );
+    }),
+    page.getByRole("button", { name: "Ready", exact: true }).click(),
+  ]);
   await expect(page.getByText("Waiting for Player 2")).toBeVisible();
 
   const joiner = await context.newPage();
@@ -331,7 +346,18 @@ test("memory card lobby can be created, joined, and synced", async ({
     code!,
   );
   await expect(joiner.getByText("Ready to play")).toBeVisible();
-  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
+  await Promise.all([
+    joiner.waitForResponse((response) => {
+      const url = new URL(response.url());
+
+      return (
+        response.request().method() === "POST" &&
+        url.pathname === readyPath &&
+        response.ok()
+      );
+    }),
+    joiner.getByRole("button", { name: "Ready", exact: true }).click(),
+  ]);
   await expect(page.getByText("Your turn")).toBeVisible();
   await expect(joiner.getByText("Player's turn")).toBeVisible();
 
@@ -358,7 +384,7 @@ test("memory cards solo mode lets one player flip cards", async ({ page }) => {
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Find a pair")).toBeVisible();
   await expect(page.locator('button[aria-label^="Hidden memory card"]')).toHaveCount(
-    16,
+    20,
   );
   await expect(page.getByText("Matches")).toBeVisible();
   await expect(page.getByText("Moves")).toBeVisible();
@@ -433,6 +459,7 @@ test("hangman lobby waits for both players to ready before starting", async ({
   const code = (await creatorLobbyCode.textContent())?.trim();
 
   expect(code).toBeTruthy();
+  await expect(page.getByText("Host")).toBeVisible();
   await page.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Waiting for Player 2")).toBeVisible();
 

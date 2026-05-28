@@ -7,7 +7,9 @@ export const MEMORY_CARD_VALUES = [
   "diamond",
   "flame",
   "heart",
+  "moon",
   "star",
+  "sun",
   "waves",
 ] as const;
 

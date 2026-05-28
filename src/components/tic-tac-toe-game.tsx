@@ -1018,6 +1018,7 @@ function OnlinePlayerPanel({
       <div className="mt-3 flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-base font-black text-white">{name}</p>
+          {player === "X" ? <HostBadge /> : null}
           <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
             {getOnlinePlayerStateText(isCurrent, isLocal, isReady, status)}
           </p>
@@ -1072,6 +1073,14 @@ function WaitingPlayerPanel({ player }: { player: Player }) {
       </p>
       <p className="mt-3 text-base font-black text-slate-300">Waiting</p>
     </div>
+  );
+}
+
+function HostBadge() {
+  return (
+    <span className="mt-1 inline-flex w-fit rounded-md border border-teal-200/40 bg-teal-200/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-teal-100">
+      Host
+    </span>
   );
 }
 
