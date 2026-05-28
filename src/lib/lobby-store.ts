@@ -274,17 +274,22 @@ async function fetchSupabase<T>(
 }
 
 function getSupabaseConfig(): SupabaseConfig | null {
-  const restUrl = normalizeSupabaseRestUrl(
-    process.env.SUPABASE_REST_URL ??
-      (process.env.NEXT_PUBLIC_SUPABASE_URL
-        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`
-        : ""),
+  const restUrl = createSupabaseRestUrl(
+    readEnv(
+      "SUPABASE_REST_URL",
+      "NEXT_PUBLIC_SUPABASE_REST_URL",
+      "SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_URL",
+    ),
   );
   const apiKey =
-    process.env.SUPABASE_API_KEY ??
-    process.env.SUPABASE_ANON_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    "";
+    readEnv(
+      "SUPABASE_API_KEY",
+      "SUPABASE_PUBLISHABLE_KEY",
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+      "SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ) ?? "";
 
   if (!restUrl || !apiKey) {
     return null;
@@ -308,14 +313,30 @@ function shouldUseMemoryFallback(): boolean {
   return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1";
 }
 
-function normalizeSupabaseRestUrl(value: string): string {
-  const trimmedValue = value.trim();
+function readEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function createSupabaseRestUrl(value: string): string {
+  const trimmedValue = value.trim().replace(/\/+$/, "");
 
   if (!trimmedValue) {
     return "";
   }
 
-  return trimmedValue.endsWith("/") ? trimmedValue : `${trimmedValue}/`;
+  if (trimmedValue.endsWith("/rest/v1")) {
+    return `${trimmedValue}/`;
+  }
+
+  return `${trimmedValue}/rest/v1/`;
 }
 
 function createRecord<T extends StoredLobby>(

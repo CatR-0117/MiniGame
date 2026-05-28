@@ -56,7 +56,7 @@ function getSafeApiErrorMessage(error: unknown): string {
   }
 
   if (message.includes("Supabase lobby store is not configured")) {
-    return "Supabase environment variables are missing. Set SUPABASE_REST_URL and SUPABASE_API_KEY in Vercel.";
+    return "Supabase environment variables are missing. Set SUPABASE_REST_URL and SUPABASE_API_KEY in Vercel, or set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.";
   }
 
   if (message.includes("Supabase request failed")) {
