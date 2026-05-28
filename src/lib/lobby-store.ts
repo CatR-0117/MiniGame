@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { ArcadeLobbyGame } from "@/lib/arcade-lobby-directory";
 import {
   isLobbyExpired,
@@ -22,14 +23,15 @@ type StoredLobbyRecord<T extends StoredLobby = StoredLobby> = {
   waiting_expires_at_ms: number | null;
 };
 
-type SupabaseConfig = {
-  restUrl: string;
-  apiKey: string;
-};
-
 const LOBBY_TABLE = "arcade_lobbies";
 const LOBBY_SELECT =
   "code,game,lobby,created_at_ms,updated_at_ms,waiting_expires_at_ms";
+const supabase = isSupabaseConfigured()
+  ? createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    )
+  : null;
 
 const globalForLobbyStore = globalThis as typeof globalThis & {
   __miniArcadeLobbyRows?: Map<string, StoredLobbyRecord>;
@@ -144,15 +146,14 @@ export async function cleanupExpiredLobbyRecords(
   await withStoreFallback(
     async () => {
       const updatedAtCutoff = now - LOBBY_TTL_MS;
-      const path =
-        `${LOBBY_TABLE}?or=` +
-        encodeURIComponent(
-          `(waiting_expires_at_ms.lte.${now},updated_at_ms.lt.${updatedAtCutoff})`,
-        );
+      const { error } = await getSupabaseClient()
+        .from(LOBBY_TABLE)
+        .delete()
+        .or(`waiting_expires_at_ms.lte.${now},updated_at_ms.lt.${updatedAtCutoff}`);
 
-      await fetchSupabase<void>(path, {
-        method: "DELETE",
-      });
+      if (error) {
+        throw createSupabaseError(error);
+      }
     },
     () => undefined,
   );
@@ -164,13 +165,13 @@ async function withStoreFallback<T>(
 ): Promise<T> {
   const canUseMemoryFallback = shouldUseMemoryFallback();
 
-  if (!getSupabaseConfig()) {
+  if (!supabase) {
     if (canUseMemoryFallback) {
       return memoryOperation();
     }
 
     throw new Error(
-      "Supabase lobby store is not configured. Set SUPABASE_REST_URL and SUPABASE_API_KEY.",
+      "Supabase lobby store is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
     );
   }
 
@@ -199,106 +200,59 @@ async function getSupabaseRecord<T extends StoredLobby = StoredLobby>(
   code: string,
   game?: ArcadeLobbyGame,
 ): Promise<StoredLobbyRecord<T> | null> {
-  const filters = [`code=eq.${encodeURIComponent(code)}`];
+  let query = getSupabaseClient()
+    .from(LOBBY_TABLE)
+    .select(LOBBY_SELECT)
+    .eq("code", code);
 
   if (game) {
-    filters.push(`game=eq.${encodeURIComponent(game)}`);
+    query = query.eq("game", game);
   }
 
-  const path = `${LOBBY_TABLE}?select=${LOBBY_SELECT}&${filters.join("&")}&limit=1`;
-  const rows = await fetchSupabase<StoredLobbyRecord<T>[]>(path);
+  const { data, error } = await query.limit(1).maybeSingle();
 
-  return rows[0] ?? null;
+  if (error) {
+    throw createSupabaseError(error);
+  }
+
+  return (data as StoredLobbyRecord<T> | null) ?? null;
 }
 
 async function upsertSupabaseRecord<T extends StoredLobby>(
   record: StoredLobbyRecord<T>,
 ): Promise<void> {
-  await fetchSupabase<StoredLobbyRecord<T>[]>(`${LOBBY_TABLE}?on_conflict=code`, {
-    method: "POST",
-    headers: {
-      Prefer: "resolution=merge-duplicates,return=representation",
-    },
-    body: JSON.stringify(record),
-  });
+  const { error } = await getSupabaseClient()
+    .from(LOBBY_TABLE)
+    .upsert(record, { onConflict: "code" });
+
+  if (error) {
+    throw createSupabaseError(error);
+  }
 }
 
 async function deleteSupabaseRecord(
   code: string,
   game?: ArcadeLobbyGame,
 ): Promise<void> {
-  const filters = [`code=eq.${encodeURIComponent(code)}`];
+  let query = getSupabaseClient().from(LOBBY_TABLE).delete().eq("code", code);
 
   if (game) {
-    filters.push(`game=eq.${encodeURIComponent(game)}`);
+    query = query.eq("game", game);
   }
 
-  await fetchSupabase<void>(`${LOBBY_TABLE}?${filters.join("&")}`, {
-    method: "DELETE",
-  });
+  const { error } = await query;
+
+  if (error) {
+    throw createSupabaseError(error);
+  }
 }
 
-async function fetchSupabase<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const config = getSupabaseConfig();
-
-  if (!config) {
+function getSupabaseClient(): SupabaseClient {
+  if (!supabase) {
     throw new Error("Supabase lobby store is not configured.");
   }
 
-  const response = await fetch(`${config.restUrl}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      apikey: config.apiKey,
-      Authorization: `Bearer ${config.apiKey}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(
-      `Supabase request failed (${response.status}): ${message || response.statusText}`,
-    );
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json().catch(() => undefined)) as T;
-}
-
-function getSupabaseConfig(): SupabaseConfig | null {
-  const restUrl = createSupabaseRestUrl(
-    readEnv(
-      "SUPABASE_REST_URL",
-      "NEXT_PUBLIC_SUPABASE_REST_URL",
-      "SUPABASE_URL",
-      "NEXT_PUBLIC_SUPABASE_URL",
-    ),
-  );
-  const apiKey =
-    readEnv(
-      "SUPABASE_API_KEY",
-      "SUPABASE_PUBLISHABLE_KEY",
-      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-      "SUPABASE_ANON_KEY",
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    ) ?? "";
-
-  if (!restUrl || !apiKey) {
-    return null;
-  }
-
-  return {
-    restUrl,
-    apiKey,
-  };
+  return supabase;
 }
 
 function shouldUseMemoryFallback(): boolean {
@@ -313,30 +267,24 @@ function shouldUseMemoryFallback(): boolean {
   return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1";
 }
 
-function readEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return "";
+function isSupabaseConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  );
 }
 
-function createSupabaseRestUrl(value: string): string {
-  const trimmedValue = value.trim().replace(/\/+$/, "");
+function createSupabaseError(error: {
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+  message: string;
+}): Error {
+  const details = [error.code, error.message, error.details, error.hint]
+    .filter(Boolean)
+    .join(" ");
 
-  if (!trimmedValue) {
-    return "";
-  }
-
-  if (trimmedValue.endsWith("/rest/v1")) {
-    return `${trimmedValue}/`;
-  }
-
-  return `${trimmedValue}/rest/v1/`;
+  return new Error(`Supabase request failed: ${details}`);
 }
 
 function createRecord<T extends StoredLobby>(

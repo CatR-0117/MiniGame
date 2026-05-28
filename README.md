@@ -11,17 +11,13 @@ A Next.js and Tailwind CSS mini arcade with a game chooser, Tic-Tac-Toe, and Mem
 
 ## Supabase Backend
 
-Multiplayer lobbies are persisted through Supabase REST when these environment
+Multiplayer lobbies are persisted through Supabase when these environment
 variables are configured:
 
 ```bash
-SUPABASE_REST_URL=https://your-project-ref.supabase.co/rest/v1/
-SUPABASE_API_KEY=your-supabase-publishable-or-anon-key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 ```
-
-The backend also accepts `NEXT_PUBLIC_SUPABASE_URL` plus
-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` if your Vercel/Supabase setup already
-uses those names.
 
 Run `supabase/arcade_lobbies.sql` in the Supabase SQL editor first. It creates a
 single `public.arcade_lobbies` table that stores each lobby as JSON with lobby
