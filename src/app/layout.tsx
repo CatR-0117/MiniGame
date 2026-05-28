@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mini Arcade | Tic-Tac-Toe and Memory Cards",
-  description: "A mini arcade with local and lobby-based games.",
+  title: "Mini Arcade | Tic-Tac-Toe, Memory Cards, and Hangman",
+  description: "A mobile-friendly mini arcade with local and lobby-based games.",
 };
 
 export default function RootLayout({

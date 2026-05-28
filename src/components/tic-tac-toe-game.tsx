@@ -380,13 +380,13 @@ export function TicTacToeGame() {
   }
 
   return (
-    <section aria-labelledby="tic-tac-toe-title" className="grid gap-5">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <section aria-labelledby="tic-tac-toe-title" className="grid gap-4 sm:gap-5">
+      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-teal-200/80">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-teal-200/80 sm:tracking-[0.28em]">
             Classic Grid
           </p>
-          <h2 id="tic-tac-toe-title" className="mt-2 text-3xl font-black text-white sm:text-5xl">
+          <h2 id="tic-tac-toe-title" className="mt-1 text-2xl font-black text-white sm:mt-2 sm:text-5xl">
             Tic-Tac-Toe
           </h2>
         </div>
@@ -399,7 +399,7 @@ export function TicTacToeGame() {
               aria-pressed={playMode === optionMode}
               onClick={() => handleModeChange(optionMode)}
               className={cn(
-                "flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
+                "flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-bold transition sm:gap-2 sm:px-4 sm:text-sm",
                 playMode === optionMode
                   ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
                   : "text-slate-300 hover:bg-white/10 hover:text-white",
@@ -502,7 +502,7 @@ function TicTacToeLobbySetup({
   playerName: string;
 }) {
   return (
-    <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-4 shadow-2xl shadow-black/25 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+    <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
       <div className="grid content-start gap-4">
         <label className="grid gap-2 text-sm font-bold text-slate-200">
           Player Name
@@ -575,7 +575,7 @@ function TicTacToePlaySurface({
   statusText: string;
 }) {
   return (
-    <section className="grid flex-1 items-center gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <section className="grid flex-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
       <div className="flex flex-col items-center justify-center gap-4">
         <TicTacToeBoard
           isBoardLocked={boardLocked}
@@ -585,7 +585,7 @@ function TicTacToePlaySurface({
 
         <div
           aria-live="polite"
-          className="flex min-h-16 w-full max-w-[430px] items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-4 py-3"
+          className="flex min-h-16 w-full max-w-[430px] flex-col items-stretch justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-3 py-3 min-[420px]:flex-row min-[420px]:items-center sm:px-4"
         >
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
@@ -593,7 +593,7 @@ function TicTacToePlaySurface({
             </p>
             <p
               className={cn(
-                "mt-1 text-xl font-black",
+                "mt-1 text-lg font-black sm:text-xl",
                 round.winner
                   ? "text-emerald-200"
                   : PLAYER_THEME[round.currentPlayer].text,
@@ -662,7 +662,7 @@ function TicTacToeBoard({
   return (
     <div
       aria-label="Tic-Tac-Toe board"
-      className="grid w-full max-w-[430px] grid-cols-3 gap-3 rounded-lg border border-white/10 bg-slate-950/75 p-3 shadow-2xl shadow-black/30"
+      className="grid w-full max-w-[430px] grid-cols-3 gap-2 rounded-lg border border-white/10 bg-slate-950/75 p-2 shadow-2xl shadow-black/30 sm:gap-3 sm:p-3"
       role="grid"
     >
       {round.board.map((cell, index) => {
@@ -681,7 +681,7 @@ function TicTacToeBoard({
             disabled={isBoardLocked || cell !== null}
             onClick={() => onMove(index)}
             className={cn(
-              "flex aspect-square min-h-0 items-center justify-center rounded-lg border text-5xl font-black transition duration-200 sm:text-6xl",
+              "flex aspect-square min-h-0 items-center justify-center rounded-lg border text-4xl font-black transition duration-200 sm:text-6xl",
               cell
                 ? cn(PLAYER_THEME[cell].cell, PLAYER_THEME[cell].glow)
                 : "border-white/10 bg-white/[0.06] text-white hover:border-teal-200/60 hover:bg-teal-200/10",
@@ -714,7 +714,7 @@ function OnlineLobbyPanel({
 }) {
   return (
     <>
-      <div className="rounded-lg border border-white/10 bg-white/[0.07] p-4">
+      <div className="rounded-lg border border-white/10 bg-white/[0.07] p-3 sm:p-4">
         <div className="flex items-center gap-2 text-slate-300">
           <Users aria-hidden="true" className="size-4 text-teal-200" />
           <p className="text-xs font-bold uppercase tracking-[0.22em]">
@@ -724,7 +724,7 @@ function OnlineLobbyPanel({
         <div className="mt-3 flex items-center justify-between gap-3">
           <output
             aria-label="Tic-Tac-Toe lobby code"
-            className="rounded-md border border-teal-200/30 bg-teal-200/10 px-3 py-2 text-xl font-black tracking-[0.2em] text-teal-100"
+            className="rounded-md border border-teal-200/30 bg-teal-200/10 px-3 py-2 text-lg font-black tracking-[0.2em] text-teal-100 sm:text-xl"
           >
             {lobby.code}
           </output>
@@ -777,7 +777,7 @@ function OnlinePlayerPanel({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white/[0.07] p-4",
+        "rounded-lg border bg-white/[0.07] p-3 sm:p-4",
         isCurrent ? "border-teal-200/60" : "border-white/10",
       )}
     >
@@ -801,7 +801,7 @@ function OnlinePlayerPanel({
 
 function WaitingPlayerPanel({ player }: { player: Player }) {
   return (
-    <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.04] p-4">
+    <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.04] p-3 sm:p-4">
       <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
         Player {player}
       </p>
@@ -822,7 +822,7 @@ function ScorePanel({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white/[0.07] p-4",
+        "rounded-lg border bg-white/[0.07] p-3 sm:p-4",
         player === "X" ? "border-cyan-300/30" : "border-amber-300/30",
       )}
     >

@@ -1,4 +1,11 @@
 import { expect, test } from "@playwright/test";
+import {
+  createHangmanLobby,
+  getHangmanLobbyView,
+  guessHangmanLetter,
+  joinHangmanLobby,
+  readyHangmanPlayer,
+} from "../src/lib/hangman";
 
 test("solo mode lets the player move and the bot answer", async ({ page }) => {
   await page.goto("/");
@@ -142,4 +149,87 @@ test("memory cards solo mode lets one player flip cards", async ({ page }) => {
   await firstCard.click();
   await expect(firstCard).toBeHidden();
   await expect(page.getByText("Pick one more")).toBeVisible();
+});
+
+test("hangman is playable on a phone-sized viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Hangman", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "Hangman" })).toBeVisible();
+  await expect(page.getByLabel("Hangman letter keyboard")).toBeVisible();
+  await expect(page.getByText("Pick a letter")).toBeVisible();
+
+  const hasNoHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  );
+
+  expect(hasNoHorizontalOverflow).toBe(true);
+
+  const letterA = page.getByRole("button", { name: "Guess A" });
+
+  await letterA.click();
+  await expect(letterA).toBeDisabled();
+});
+
+test("hangman lobby waits for both players to ready before starting", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Hangman/ }).click();
+  await page.getByRole("button", { name: "Lobby", exact: true }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const creatorLobbyCode = page.locator(
+    'output[aria-label="Hangman lobby code"]',
+  );
+  await expect(creatorLobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await creatorLobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  await expect(page.getByText("Waiting for Player 2")).toBeVisible();
+
+  const joiner = await context.newPage();
+  await joiner.goto("/");
+  await joiner.getByRole("button", { name: /Hangman/ }).click();
+  await joiner.getByRole("button", { name: "Lobby", exact: true }).click();
+  await joiner.getByLabel("Hangman lobby code").fill(code!);
+  await joiner.getByRole("button", { name: "Join Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Hangman lobby code"]'),
+  ).toHaveText(code!);
+  await expect(joiner.getByText("Ready to race")).toBeVisible();
+
+  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
+
+  await expect(joiner.getByText("Race is live")).toBeVisible();
+  await expect(page.getByText("Race is live")).toBeVisible();
+  await expect(joiner.getByLabel("Hangman letter keyboard")).toBeVisible();
+});
+
+test("hangman lobby records the first solver as the fastest winner", () => {
+  const puzzle = { word: "ARCADE", category: "Games" };
+  let lobby = createHangmanLobby("ABC123", "Ada", 1_000, puzzle);
+
+  lobby = joinHangmanLobby(lobby, "Grace", 1_100);
+  lobby = readyHangmanPlayer(lobby, "player-1", 2_000);
+  lobby = readyHangmanPlayer(lobby, "player-2", 3_000);
+  lobby = guessHangmanLetter(lobby, "player-2", "A", 3_100);
+  lobby = guessHangmanLetter(lobby, "player-1", "A", 3_200);
+  lobby = guessHangmanLetter(lobby, "player-1", "R", 3_300);
+  lobby = guessHangmanLetter(lobby, "player-1", "C", 3_400);
+  lobby = guessHangmanLetter(lobby, "player-1", "D", 3_500);
+  lobby = guessHangmanLetter(lobby, "player-1", "E", 3_600);
+
+  const playerOneView = getHangmanLobbyView(lobby, "player-1");
+  const playerTwoView = getHangmanLobbyView(lobby, "player-2");
+
+  expect(lobby.status).toBe("finished");
+  expect(lobby.winnerId).toBe("player-1");
+  expect(playerOneView?.players[0].elapsedMs).toBe(600);
+  expect(playerOneView?.revealedWord).toBe("ARCADE");
+  expect(playerTwoView?.wordSlots.join("")).toBe("ARCADE");
 });

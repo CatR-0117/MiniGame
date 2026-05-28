@@ -386,7 +386,7 @@ export function MemoryCardGame() {
 
   if (playMode === "solo") {
     return (
-      <section aria-labelledby="memory-title" className="grid gap-5">
+      <section aria-labelledby="memory-title" className="grid gap-4 sm:gap-5">
         <MemoryHeader
           onModeChange={handleModeChange}
           playMode={playMode}
@@ -426,13 +426,13 @@ export function MemoryCardGame() {
 
   if (!lobby) {
     return (
-      <section aria-labelledby="memory-title" className="grid gap-5">
+      <section aria-labelledby="memory-title" className="grid gap-4 sm:gap-5">
         <MemoryHeader
           onModeChange={handleModeChange}
           playMode={playMode}
         />
 
-        <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-4 shadow-2xl shadow-black/25 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
           <div className="grid content-start gap-4">
             <label className="grid gap-2 text-sm font-bold text-slate-200">
               Player Name
@@ -496,38 +496,38 @@ export function MemoryCardGame() {
   }
 
   return (
-    <section aria-labelledby="memory-title" className="grid gap-5">
+    <section aria-labelledby="memory-title" className="grid gap-4 sm:gap-5">
       <MemoryHeader
         actions={
-          <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleRestartLobby}
-            disabled={isBusy || !playerId}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-300 px-4 text-sm font-black text-slate-950 transition hover:bg-teal-200 disabled:cursor-wait disabled:opacity-70"
-          >
-            <RefreshCw aria-hidden="true" className="size-4" />
-            New Deck
-          </button>
-          <button
-            type="button"
-            onClick={handleLeaveLobby}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12"
-          >
-            <LogOut aria-hidden="true" className="size-4" />
-            Leave
-          </button>
-        </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <button
+              type="button"
+              onClick={handleRestartLobby}
+              disabled={isBusy || !playerId}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-300 px-4 text-sm font-black text-slate-950 transition hover:bg-teal-200 disabled:cursor-wait disabled:opacity-70"
+            >
+              <RefreshCw aria-hidden="true" className="size-4" />
+              New Deck
+            </button>
+            <button
+              type="button"
+              onClick={handleLeaveLobby}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12"
+            >
+              <LogOut aria-hidden="true" className="size-4" />
+              Leave
+            </button>
+          </div>
         }
         onModeChange={handleModeChange}
         playMode={playMode}
       />
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
         <div className="flex flex-col items-center gap-4">
           <div
             aria-label="Memory card board"
-            className="grid w-full max-w-[560px] grid-cols-4 gap-2 rounded-lg border border-white/10 bg-slate-950/75 p-3 shadow-2xl shadow-black/30 sm:gap-3"
+            className="grid w-full max-w-[560px] grid-cols-4 gap-2 rounded-lg border border-white/10 bg-slate-950/75 p-2 shadow-2xl shadow-black/30 sm:gap-3 sm:p-3"
           >
             {lobby.cards.map((card, index) => {
               const isVisible =
@@ -553,13 +553,13 @@ export function MemoryCardGame() {
 
           <div
             aria-live="polite"
-            className="flex min-h-16 w-full max-w-[560px] items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-4 py-3"
+            className="flex min-h-16 w-full max-w-[560px] flex-col items-stretch justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-3 py-3 min-[420px]:flex-row min-[420px]:items-center sm:px-4"
           >
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
                 Status
               </p>
-              <p className="mt-1 text-xl font-black text-teal-100">
+              <p className="mt-1 text-lg font-black text-teal-100 sm:text-xl">
                 {statusText}
               </p>
             </div>
@@ -576,7 +576,7 @@ export function MemoryCardGame() {
         </div>
 
         <aside className="grid content-start gap-3">
-          <div className="rounded-lg border border-white/10 bg-white/[0.07] p-4">
+          <div className="rounded-lg border border-white/10 bg-white/[0.07] p-3 sm:p-4">
             <div className="flex items-center gap-2 text-slate-300">
               <Users aria-hidden="true" className="size-4 text-teal-200" />
               <p className="text-xs font-bold uppercase tracking-[0.22em]">
@@ -586,7 +586,7 @@ export function MemoryCardGame() {
             <div className="mt-3 flex items-center justify-between gap-3">
               <output
                 aria-label="Lobby code"
-                className="rounded-md border border-teal-200/30 bg-teal-200/10 px-3 py-2 text-xl font-black tracking-[0.2em] text-teal-100"
+                className="rounded-md border border-teal-200/30 bg-teal-200/10 px-3 py-2 text-lg font-black tracking-[0.2em] text-teal-100 sm:text-xl"
               >
                 {lobby.code}
               </output>
@@ -614,7 +614,7 @@ export function MemoryCardGame() {
             {lobby.players.length < 2 ? <WaitingPlayerPanel /> : null}
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-white/[0.07] p-4">
+          <div className="rounded-lg border border-white/10 bg-white/[0.07] p-3 sm:p-4">
             <div className="flex items-center gap-2 text-slate-300">
               <Trophy aria-hidden="true" className="size-4 text-emerald-200" />
               <p className="text-xs font-bold uppercase tracking-[0.22em]">
@@ -650,12 +650,12 @@ function MemoryHeader({
   playMode: MemoryPlayMode;
 }) {
   return (
-    <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+    <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
       <div>
-        <p className="text-xs font-bold uppercase tracking-[0.28em] text-teal-200/80">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-teal-200/80 sm:tracking-[0.28em]">
           Match Pairs
         </p>
-        <h2 id="memory-title" className="mt-2 text-3xl font-black text-white sm:text-5xl">
+        <h2 id="memory-title" className="mt-1 text-2xl font-black text-white sm:mt-2 sm:text-5xl">
           Memory Cards
         </h2>
       </div>
@@ -669,7 +669,7 @@ function MemoryHeader({
               aria-pressed={playMode === mode}
               onClick={() => onModeChange(mode)}
               className={cn(
-                "flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-bold transition",
+                "flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
                 playMode === mode
                   ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
                   : "text-slate-300 hover:bg-white/10 hover:text-white",
@@ -704,11 +704,11 @@ function MemoryPlaySurface({
   statusText: string;
 }) {
   return (
-    <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
       <div className="flex flex-col items-center gap-4">
         <div
           aria-label="Memory card board"
-          className="grid w-full max-w-[560px] grid-cols-4 gap-2 rounded-lg border border-white/10 bg-slate-950/75 p-3 shadow-2xl shadow-black/30 sm:gap-3"
+          className="grid w-full max-w-[560px] grid-cols-4 gap-2 rounded-lg border border-white/10 bg-slate-950/75 p-2 shadow-2xl shadow-black/30 sm:gap-3 sm:p-3"
         >
           {cards.map((card, index) => {
             const isVisible = card.isMatched || flippedCardIds.includes(card.id);
@@ -728,13 +728,13 @@ function MemoryPlaySurface({
 
         <div
           aria-live="polite"
-          className="flex min-h-16 w-full max-w-[560px] items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-4 py-3"
+          className="flex min-h-16 w-full max-w-[560px] flex-col items-stretch justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/65 px-3 py-3 min-[420px]:flex-row min-[420px]:items-center sm:px-4"
         >
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
               Status
             </p>
-            <p className="mt-1 text-xl font-black text-teal-100">
+            <p className="mt-1 text-lg font-black text-teal-100 sm:text-xl">
               {statusText}
             </p>
           </div>
@@ -770,7 +770,7 @@ function SoloStatsPanel({
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-teal-300/30 bg-white/[0.07] p-4">
+        <div className="rounded-lg border border-teal-300/30 bg-white/[0.07] p-3 sm:p-4">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
             Matches
           </p>
@@ -778,7 +778,7 @@ function SoloStatsPanel({
             {matches}
           </p>
         </div>
-        <div className="rounded-lg border border-sky-300/30 bg-white/[0.07] p-4">
+        <div className="rounded-lg border border-sky-300/30 bg-white/[0.07] p-3 sm:p-4">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-400">
             Moves
           </p>
@@ -786,7 +786,7 @@ function SoloStatsPanel({
         </div>
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-white/[0.07] p-4">
+      <div className="rounded-lg border border-white/10 bg-white/[0.07] p-3 sm:p-4">
         <div className="flex items-center gap-2 text-slate-300">
           <Trophy aria-hidden="true" className="size-4 text-emerald-200" />
           <p className="text-xs font-bold uppercase tracking-[0.22em]">
@@ -828,7 +828,7 @@ function MemoryCardButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex aspect-[3/4] min-h-0 flex-col items-center justify-center gap-2 rounded-lg border p-2 text-center transition duration-200",
+        "flex aspect-[3/4] min-h-0 flex-col items-center justify-center gap-1 rounded-lg border p-1.5 text-center transition duration-200 sm:gap-2 sm:p-2",
         isVisible
           ? cn(face.className, card.isMatched && "ring-2 ring-emerald-200/70")
           : "border-white/10 bg-white/[0.06] text-slate-400 hover:border-teal-200/60 hover:bg-teal-200/10 hover:text-teal-100",
@@ -861,7 +861,7 @@ function PlayerScorePanel({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-white/[0.07] p-4",
+        "rounded-lg border bg-white/[0.07] p-3 sm:p-4",
         isCurrent ? "border-teal-200/60" : "border-white/10",
       )}
     >
@@ -885,7 +885,7 @@ function PlayerScorePanel({
 
 function WaitingPlayerPanel() {
   return (
-    <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.04] p-4">
+    <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.04] p-3 sm:p-4">
       <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">
         Player 2
       </p>

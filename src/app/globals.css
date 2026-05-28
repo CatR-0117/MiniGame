@@ -11,16 +11,19 @@
 html {
   min-width: 320px;
   background: #061016;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
   background: #061016;
+  overflow-x: hidden;
 }
 
 button {
   font: inherit;
+  touch-action: manipulation;
 }
 
 ::selection {
