@@ -6,11 +6,13 @@ import {
 } from "@/lib/game";
 import {
   cleanupExpiredLobbies,
+  getWaitingLobbyExpiresAt,
   lobbyError,
   normalizeLobbyCode,
   sanitizePlayerName,
   type LobbyResult,
 } from "@/lib/lobby-utils";
+import { createRejoinTokenHash } from "@/lib/lobby-server";
 import {
   generateUniqueArcadeLobbyCode,
   registerArcadeLobbyCode,
@@ -26,6 +28,7 @@ export type TicTacToeLobbyPlayer = {
   id: Player;
   name: string;
   isReady: boolean;
+  rejoinTokenHash?: string;
 };
 
 export type TicTacToeLobby = {
@@ -35,13 +38,17 @@ export type TicTacToeLobby = {
   status: TicTacToeLobbyStatus;
   createdAt: number;
   updatedAt: number;
+  waitingExpiresAt: number | null;
 };
 
 const globalForTicTacToe = globalThis as typeof globalThis & {
   __miniArcadeTicTacToeLobbies?: Map<string, TicTacToeLobby>;
 };
 
-export function createTicTacToeLobbyForPlayer(playerName: string): {
+export function createTicTacToeLobbyForPlayer(
+  playerName: string,
+  rejoinToken: string,
+): {
   lobby: TicTacToeLobby;
   playerId: Player;
 } {
@@ -50,9 +57,38 @@ export function createTicTacToeLobbyForPlayer(playerName: string): {
   cleanupExpiredLobbies(lobbies, now);
 
   const code = generateUniqueArcadeLobbyCode();
-  const lobby = createTicTacToeLobby(code, playerName, now);
+  const lobby = createTicTacToeLobby(code, playerName, now, rejoinToken);
   lobbies.set(code, lobby);
   registerArcadeLobbyCode(code, "tic-tac-toe");
+
+  return {
+    lobby,
+    playerId: "X",
+  };
+}
+
+export function createTicTacToeLobbyForHostCode(
+  code: string,
+  playerName: string,
+  rejoinToken: string,
+): {
+  lobby: TicTacToeLobby;
+  playerId: Player;
+} {
+  const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
+  const normalizedCode = normalizeLobbyCode(code);
+  const lobby = createTicTacToeLobby(
+    normalizedCode,
+    playerName,
+    now,
+    rejoinToken,
+  );
+
+  lobbies.set(normalizedCode, lobby);
+  registerArcadeLobbyCode(normalizedCode, "tic-tac-toe");
 
   return {
     lobby,
@@ -64,6 +100,9 @@ export function getTicTacToeLobbyByCode(code: string): LobbyResult<{
   lobby: TicTacToeLobby;
 }> {
   const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = lobbies.get(normalizedCode);
 
@@ -82,11 +121,15 @@ export function getTicTacToeLobbyByCode(code: string): LobbyResult<{
 export function joinTicTacToeLobbyByCode(
   code: string,
   playerName: string,
+  rejoinToken: string,
 ): LobbyResult<{
   lobby: TicTacToeLobby;
   playerId: Player;
 }> {
   const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = lobbies.get(normalizedCode);
 
@@ -94,10 +137,26 @@ export function joinTicTacToeLobbyByCode(
     return lobbyError(404, "Lobby not found.");
   }
 
+  const rejoiningPlayer = getRejoiningPlayer(lobby, rejoinToken);
+
+  if (rejoiningPlayer) {
+    const nextLobby = touchLobby(lobby, now);
+    lobbies.set(normalizedCode, nextLobby);
+
+    return {
+      ok: true,
+      data: {
+        lobby: nextLobby,
+        playerId: rejoiningPlayer.id,
+      },
+    };
+  }
+
   if (lobby.players.length >= 2) {
     return lobbyError(409, "Lobby is full.");
   }
 
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken) ?? undefined;
   const nextLobby: TicTacToeLobby = {
     ...lobby,
     players: [
@@ -106,10 +165,12 @@ export function joinTicTacToeLobbyByCode(
         id: "O",
         name: sanitizePlayerName(playerName, "Player O"),
         isReady: false,
+        ...(rejoinTokenHash ? { rejoinTokenHash } : {}),
       },
     ],
     status: "readying",
-    updatedAt: Date.now(),
+    updatedAt: now,
+    waitingExpiresAt: null,
   };
 
   lobbies.set(normalizedCode, nextLobby);
@@ -269,12 +330,17 @@ export function readyTicTacToeLobbyPlayer(
   );
   const shouldStart =
     players.length === 2 && players.every((player) => player.isReady);
+  const now = Date.now();
   const nextLobby: TicTacToeLobby = {
     ...lobby,
     players,
     status:
       players.length < 2 ? "waiting" : shouldStart ? "playing" : "readying",
-    updatedAt: Date.now(),
+    updatedAt: now,
+    waitingExpiresAt:
+      players.length < 2
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 
   getLobbyStore().set(nextLobby.code, nextLobby);
@@ -291,11 +357,32 @@ export function isTicTacToePlayerId(value: string): value is Player {
   return value === "X" || value === "O";
 }
 
+export function deleteTicTacToeLobbyByCode(code: string): void {
+  getLobbyStore().delete(normalizeLobbyCode(code));
+}
+
+export function isTicTacToeLobbyHost(
+  code: string,
+  rejoinToken: string,
+): boolean {
+  const lobby = getLobbyStore().get(normalizeLobbyCode(code));
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  return Boolean(
+    lobby?.players[0]?.id === "X" &&
+      rejoinTokenHash &&
+      lobby.players[0].rejoinTokenHash === rejoinTokenHash,
+  );
+}
+
 function createTicTacToeLobby(
   code: string,
   playerName: string,
   now: number,
+  rejoinToken: string,
 ): TicTacToeLobby {
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken) ?? undefined;
+
   return {
     code,
     players: [
@@ -303,12 +390,14 @@ function createTicTacToeLobby(
         id: "X",
         name: sanitizePlayerName(playerName, "Player X"),
         isReady: false,
+        ...(rejoinTokenHash ? { rejoinTokenHash } : {}),
       },
     ],
     game: createGameState("duo"),
     status: "waiting",
     createdAt: now,
     updatedAt: now,
+    waitingExpiresAt: getWaitingLobbyExpiresAt(now),
   };
 }
 
@@ -316,6 +405,8 @@ function resetLobbyReadiness(
   lobby: TicTacToeLobby,
   game: GameState,
 ): TicTacToeLobby {
+  const now = Date.now();
+
   return {
     ...lobby,
     game,
@@ -324,7 +415,11 @@ function resetLobbyReadiness(
       isReady: false,
     })),
     status: lobby.players.length < 2 ? "waiting" : "readying",
-    updatedAt: Date.now(),
+    updatedAt: now,
+    waitingExpiresAt:
+      lobby.players.length < 2
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 }
 
@@ -350,6 +445,8 @@ function updateLobbyGame(
   lobby: TicTacToeLobby,
   game: GameState,
 ): TicTacToeLobby {
+  const now = Date.now();
+
   return {
     ...lobby,
     game,
@@ -359,7 +456,34 @@ function updateLobbyGame(
         : game.round.status === "won"
           ? "finished"
           : "playing",
-    updatedAt: Date.now(),
+    updatedAt: now,
+    waitingExpiresAt:
+      lobby.players.length < 2
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
+  };
+}
+
+function getRejoiningPlayer(
+  lobby: TicTacToeLobby,
+  rejoinToken: string,
+): TicTacToeLobbyPlayer | null {
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  if (!rejoinTokenHash) {
+    return null;
+  }
+
+  return (
+    lobby.players.find((player) => player.rejoinTokenHash === rejoinTokenHash) ??
+    null
+  );
+}
+
+function touchLobby(lobby: TicTacToeLobby, now: number): TicTacToeLobby {
+  return {
+    ...lobby,
+    updatedAt: now,
   };
 }
 

@@ -1,4 +1,4 @@
-import { sanitizePlayerName } from "@/lib/lobby-utils";
+import { getWaitingLobbyExpiresAt, sanitizePlayerName } from "@/lib/lobby-utils";
 
 export type HangmanPuzzle = {
   word: string;
@@ -12,6 +12,7 @@ export type HangmanPlayer = {
   id: HangmanPlayerId;
   name: string;
   isReady: boolean;
+  rejoinTokenHash?: string;
   guessedLetters: string[];
   solvedAt: number | null;
   lostAt: number | null;
@@ -27,6 +28,7 @@ export type HangmanLobby = {
   startedAt: number | null;
   createdAt: number;
   updatedAt: number;
+  waitingExpiresAt: number | null;
 };
 
 export type HangmanPublicPlayer = {
@@ -55,6 +57,7 @@ export type HangmanLobbyView = {
   winnerId: HangmanPlayerId | null;
   startedAt: number | null;
   updatedAt: number;
+  waitingExpiresAt: number | null;
 };
 
 export const HANGMAN_MAX_MISSES = 6;
@@ -141,16 +144,20 @@ export function createHangmanLobby(
   playerName = "Player 1",
   now = Date.now(),
   puzzle = pickHangmanPuzzle(),
+  rejoinTokenHash?: string,
 ): HangmanLobby {
   return {
     code,
     puzzle,
-    players: [createHangmanPlayer("player-1", playerName, "Player 1")],
+    players: [
+      createHangmanPlayer("player-1", playerName, "Player 1", rejoinTokenHash),
+    ],
     status: "waiting",
     winnerId: null,
     startedAt: null,
     createdAt: now,
     updatedAt: now,
+    waitingExpiresAt: getWaitingLobbyExpiresAt(now),
   };
 }
 
@@ -158,6 +165,7 @@ export function joinHangmanLobby(
   lobby: HangmanLobby,
   playerName = "Player 2",
   now = Date.now(),
+  rejoinTokenHash?: string,
 ): HangmanLobby {
   if (lobby.players.length >= HANGMAN_PLAYER_IDS.length) {
     return lobby;
@@ -173,10 +181,12 @@ export function joinHangmanLobby(
         nextPlayerId,
         playerName,
         `Player ${lobby.players.length + 1}`,
+        rejoinTokenHash,
       ),
     ],
     status: "readying",
     updatedAt: now,
+    waitingExpiresAt: null,
   };
 }
 
@@ -215,6 +225,10 @@ export function readyHangmanPlayer(
           : "readying",
     startedAt: shouldStart ? now : lobby.startedAt,
     updatedAt: now,
+    waitingExpiresAt:
+      players.length < HANGMAN_PLAYER_IDS.length
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 }
 
@@ -239,6 +253,10 @@ export function restartHangmanLobby(
     winnerId: null,
     startedAt: null,
     updatedAt: now,
+    waitingExpiresAt:
+      lobby.players.length < HANGMAN_PLAYER_IDS.length
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 }
 
@@ -353,6 +371,7 @@ export function getHangmanLobbyView(
     winnerId: lobby.winnerId,
     startedAt: lobby.startedAt,
     updatedAt: lobby.updatedAt,
+    waitingExpiresAt: lobby.waitingExpiresAt,
   };
 }
 
@@ -382,11 +401,13 @@ function createHangmanPlayer(
   id: HangmanPlayerId,
   name: string,
   fallback: string,
+  rejoinTokenHash?: string,
 ): HangmanPlayer {
   return {
     id,
     name: sanitizePlayerName(name, fallback),
     isReady: false,
+    ...(rejoinTokenHash ? { rejoinTokenHash } : {}),
     guessedLetters: [],
     solvedAt: null,
     lostAt: null,

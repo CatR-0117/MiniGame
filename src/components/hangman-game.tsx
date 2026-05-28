@@ -27,7 +27,15 @@ import {
   type HangmanPuzzle,
 } from "@/lib/hangman";
 import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  createRejoinToken,
+  forgetLobbySession,
+  readLobbySession,
+  rememberLobbySession,
+  type StoredLobbySession,
+} from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
+import { WaitingLobbyCountdown } from "@/components/waiting-lobby-countdown";
 
 type HangmanPlayMode = "solo" | "lobby";
 type SoloStatus = "playing" | "won" | "lost";
@@ -40,10 +48,7 @@ type LobbyWithPlayerResponse = LobbyResponse & {
   playerId: HangmanPlayerId;
 };
 
-type SavedHangmanSession = {
-  code: string;
-  playerId: HangmanPlayerId;
-};
+type SavedHangmanSession = StoredLobbySession<HangmanPlayerId>;
 
 const SESSION_STORAGE_KEY = "mini-arcade-hangman-session";
 
@@ -61,11 +66,27 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 export function HangmanGame({
+  autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyLeave,
+  onLobbySessionChange,
+  playerName: externalPlayerName,
+  rejoinToken: externalRejoinToken,
   showLobbyJoinForm = true,
   showModeControls = true,
 }: {
+  autoJoinCode?: string | null;
   initialPlayMode?: HangmanPlayMode;
+  onLobbyLeave?: () => void;
+  onLobbySessionChange?: (session: {
+    code: string;
+    game: "hangman";
+    isHost: boolean;
+    playerId: HangmanPlayerId;
+    rejoinToken: string;
+  }) => void;
+  playerName?: string;
+  rejoinToken?: string;
   showLobbyJoinForm?: boolean;
   showModeControls?: boolean;
 }) {
@@ -76,13 +97,16 @@ export function HangmanGame({
   const [soloGuessedLetters, setSoloGuessedLetters] = useState<string[]>([]);
   const [lobby, setLobby] = useState<HangmanLobbyView | null>(null);
   const [playerId, setPlayerId] = useState<HangmanPlayerId | null>(null);
-  const [playerName, setPlayerName] = useState("Player");
+  const [localPlayerName, setLocalPlayerName] = useState("Player");
+  const [localRejoinToken] = useState(() => createRejoinToken());
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingLetter, setPendingLetter] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(initialPlayMode === "lobby");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
+  const playerName = externalPlayerName ?? localPlayerName;
+  const sessionRejoinToken = externalRejoinToken ?? localRejoinToken;
 
   const soloWordLetters = useMemo(
     () => getHangmanUniqueLetters(soloPuzzle.word),
@@ -114,6 +138,34 @@ export function HangmanGame({
     [],
   );
 
+  const joinLobbyByCode = useCallback(
+    async (code: string) => {
+      const response = await postJson<LobbyWithPlayerResponse>(
+        `/api/hangman/lobbies/${encodeURIComponent(code)}/join`,
+        { playerName, rejoinToken: sessionRejoinToken },
+      );
+
+      setLobby(response.lobby);
+      setPlayerId(response.playerId);
+      setPlayMode("lobby");
+      rememberSession(
+        response.lobby.code,
+        response.playerId,
+        sessionRejoinToken,
+      );
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "hangman",
+        isHost: response.playerId === "player-1",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
+
+      return response;
+    },
+    [onLobbySessionChange, playerName, sessionRejoinToken],
+  );
+
   useEffect(() => {
     if (initialPlayMode !== "lobby") {
       return;
@@ -127,6 +179,23 @@ export function HangmanGame({
         return;
       }
 
+      if (autoJoinCode) {
+        setPlayMode("lobby");
+
+        joinLobbyByCode(autoJoinCode)
+          .catch(() => {
+            if (isActive) {
+              setPlayerId(null);
+            }
+          })
+          .finally(() => {
+            if (isActive) {
+              setIsRestoring(false);
+            }
+          });
+        return;
+      }
+
       if (!savedSession) {
         setIsRestoring(false);
         return;
@@ -137,7 +206,7 @@ export function HangmanGame({
 
       refreshLobby(savedSession.code, savedSession.playerId)
         .catch(() => {
-          window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          forgetLobbySession(SESSION_STORAGE_KEY);
 
           if (isActive) {
             setPlayerId(null);
@@ -154,7 +223,7 @@ export function HangmanGame({
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [initialPlayMode, refreshLobby]);
+  }, [autoJoinCode, initialPlayMode, joinLobbyByCode, refreshLobby]);
 
   useEffect(() => {
     if (!lobby?.code || !playerId || playMode !== "lobby") {
@@ -299,14 +368,21 @@ export function HangmanGame({
     try {
       const response = await postJson<LobbyWithPlayerResponse>(
         "/api/hangman/lobbies",
-        { playerName },
+        { playerName, rejoinToken: sessionRejoinToken },
       );
 
       setLobby(response.lobby);
       setPlayerId(response.playerId);
       setPlayMode("lobby");
       setJoinCode("");
-      rememberSession(response.lobby.code, response.playerId);
+      rememberSession(response.lobby.code, response.playerId, sessionRejoinToken);
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "hangman",
+        isHost: response.playerId === "player-1",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -328,15 +404,7 @@ export function HangmanGame({
     setError("");
 
     try {
-      const response = await postJson<LobbyWithPlayerResponse>(
-        `/api/hangman/lobbies/${encodeURIComponent(code)}/join`,
-        { playerName },
-      );
-
-      setLobby(response.lobby);
-      setPlayerId(response.playerId);
-      setPlayMode("lobby");
-      rememberSession(response.lobby.code, response.playerId);
+      await joinLobbyByCode(code);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -399,7 +467,8 @@ export function HangmanGame({
   }
 
   function handleLeaveLobby() {
-    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    forgetLobbySession(SESSION_STORAGE_KEY);
+    onLobbyLeave?.();
     setLobby(null);
     setPlayerId(null);
     setJoinCode("");
@@ -487,9 +556,10 @@ export function HangmanGame({
           onCreateLobby={handleCreateLobby}
           onJoinCodeChange={(value) => setJoinCode(cleanLobbyCode(value))}
           onJoinLobby={handleJoinLobby}
-          onPlayerNameChange={setPlayerName}
+          onPlayerNameChange={setLocalPlayerName}
           playerName={playerName}
           showJoinForm={showLobbyJoinForm}
+          showPlayerNameInput={externalPlayerName === undefined}
         />
       </section>
     );
@@ -644,6 +714,7 @@ function HangmanLobbySetup({
   onPlayerNameChange,
   playerName,
   showJoinForm,
+  showPlayerNameInput,
 }: {
   error: string;
   isBusy: boolean;
@@ -654,6 +725,7 @@ function HangmanLobbySetup({
   onPlayerNameChange: (value: string) => void;
   playerName: string;
   showJoinForm: boolean;
+  showPlayerNameInput: boolean;
 }) {
   return (
     <section
@@ -663,16 +735,18 @@ function HangmanLobbySetup({
       )}
     >
       <div className="grid content-start gap-4">
-        <label className="grid gap-2 text-sm font-bold text-slate-200">
-          Player Name
-          <input
-            value={playerName}
-            onChange={(event) => onPlayerNameChange(event.target.value)}
-            className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
-            maxLength={24}
-            placeholder="Player"
-          />
-        </label>
+        {showPlayerNameInput ? (
+          <label className="grid gap-2 text-sm font-bold text-slate-200">
+            Player Name
+            <input
+              value={playerName}
+              onChange={(event) => onPlayerNameChange(event.target.value)}
+              className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
+              maxLength={24}
+              placeholder="Player"
+            />
+          </label>
+        ) : null}
 
         <button
           type="button"
@@ -770,6 +844,9 @@ function HangmanReadyRoom({
           code={lobby.code}
           onCopy={onCopy}
         />
+        {lobby.status === "waiting" && lobby.players.length < 2 ? (
+          <WaitingLobbyCountdown expiresAt={lobby.waitingExpiresAt} />
+        ) : null}
         <PlayersPanel
           localPlayerId={lobby.localPlayerId}
           players={lobby.players}
@@ -1292,46 +1369,16 @@ function cleanLobbyCode(value: string): string {
   return normalizeLobbyCode(value).slice(0, 6);
 }
 
-function rememberSession(code: string, playerId: HangmanPlayerId) {
-  window.sessionStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({ code, playerId }),
-  );
+function rememberSession(
+  code: string,
+  playerId: HangmanPlayerId,
+  rejoinToken: string,
+) {
+  rememberLobbySession(SESSION_STORAGE_KEY, { code, playerId, rejoinToken });
 }
 
 function readSavedSession(): SavedHangmanSession | null {
-  const storedValue = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-
-  if (!storedValue) {
-    return null;
-  }
-
-  try {
-    const parsedValue: unknown = JSON.parse(storedValue);
-
-    if (
-      parsedValue &&
-      typeof parsedValue === "object" &&
-      !Array.isArray(parsedValue)
-    ) {
-      const { code, playerId } = parsedValue as Record<string, unknown>;
-
-      if (typeof code === "string" && typeof playerId === "string") {
-        const normalizedCode = cleanLobbyCode(code);
-
-        if (normalizedCode && isHangmanPlayerId(playerId)) {
-          return {
-            code: normalizedCode,
-            playerId,
-          };
-        }
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
+  return readLobbySession(SESSION_STORAGE_KEY, cleanLobbyCode, isHangmanPlayerId);
 }
 
 function isTextInputTarget(target: EventTarget | null): boolean {

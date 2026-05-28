@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJsonObject, readStringField } from "@/lib/api";
-import { joinLobbyByCode } from "@/lib/memory-lobbies";
+import { switchArcadeLobbyGame } from "@/lib/arcade-lobbies";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,8 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const body = await readJsonObject(request);
   const playerName = readStringField(body, "playerName");
   const rejoinToken = readStringField(body, "rejoinToken");
-  const result = joinLobbyByCode(code, playerName, rejoinToken);
+  const game = readStringField(body, "game");
+  const result = switchArcadeLobbyGame(code, playerName, rejoinToken, game);
 
   if (!result.ok) {
     return NextResponse.json(

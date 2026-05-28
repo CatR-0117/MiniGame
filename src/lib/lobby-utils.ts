@@ -12,6 +12,7 @@ export type LobbyFailure = {
 export type LobbyResult<T> = LobbySuccess<T> | LobbyFailure;
 
 export const LOBBY_TTL_MS = 4 * 60 * 60 * 1_000;
+export const WAITING_LOBBY_TTL_MS = 5 * 60 * 1_000;
 
 const LOBBY_CODE_LENGTH = 6;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -20,15 +21,41 @@ export function normalizeLobbyCode(code: string): string {
   return code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-export function cleanupExpiredLobbies<T extends { updatedAt: number }>(
+export function cleanupExpiredLobbies<
+  T extends {
+    status?: string;
+    updatedAt: number;
+    waitingExpiresAt?: number | null;
+  },
+>(
   lobbies: Map<string, T>,
   now: number,
 ): void {
   for (const [code, lobby] of lobbies) {
-    if (now - lobby.updatedAt > LOBBY_TTL_MS) {
+    if (isLobbyExpired(lobby, now)) {
       lobbies.delete(code);
     }
   }
+}
+
+export function getWaitingLobbyExpiresAt(now: number): number {
+  return now + WAITING_LOBBY_TTL_MS;
+}
+
+export function isLobbyExpired(
+  lobby: {
+    status?: string;
+    updatedAt: number;
+    waitingExpiresAt?: number | null;
+  },
+  now: number,
+): boolean {
+  return (
+    (lobby.status === "waiting" &&
+      typeof lobby.waitingExpiresAt === "number" &&
+      now >= lobby.waitingExpiresAt) ||
+    now - lobby.updatedAt > LOBBY_TTL_MS
+  );
 }
 
 export function generateUniqueLobbyCode<T>(lobbies: Map<string, T>): string {

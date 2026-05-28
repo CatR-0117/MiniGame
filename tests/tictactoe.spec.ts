@@ -90,6 +90,92 @@ test("tic-tac-toe lobby can be created, joined, and synced", async ({
   await expect(joiner.getByLabel("Row 1, column 2, marked O")).toBeVisible();
 });
 
+test("tic-tac-toe lobby shows a five minute waiting countdown", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  await expect(page.getByLabel("Lobby wait countdown")).toHaveText(
+    /Waiting\s*(5:00|4:5\d)/,
+  );
+});
+
+test("host can switch lobby game after entering their name once", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await expect(page.getByLabel("Player Name")).toHaveCount(1);
+  await page.getByLabel("Player Name").fill("Ada");
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const ticTacToeLobbyCode = page.locator(
+    'output[aria-label="Tic-Tac-Toe lobby code"]',
+  );
+  await expect(ticTacToeLobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await ticTacToeLobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+  await expect(page.getByLabel("Player Name")).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Memory Cards/ }).click();
+
+  await expect(page.getByRole("heading", { name: "Memory Cards" })).toBeVisible();
+  await expect(page.locator('output[aria-label="Lobby code"]')).toHaveText(
+    code!,
+  );
+  await expect(page.getByText("Ada")).toBeVisible();
+});
+
+test("returning tic-tac-toe player can reclaim a full lobby", async ({
+  request,
+}) => {
+  const creatorToken = "creator-rejoin-token";
+  const joinerToken = "joiner-rejoin-token";
+  const createResponse = await request.post("/api/tic-tac-toe/lobbies", {
+    data: {
+      playerName: "Ada",
+      rejoinToken: creatorToken,
+    },
+  });
+
+  expect(createResponse.ok()).toBe(true);
+
+  const created = await createResponse.json();
+  const code = created.lobby.code;
+
+  const joinResponse = await request.post(
+    `/api/tic-tac-toe/lobbies/${code}/join`,
+    {
+      data: {
+        playerName: "Grace",
+        rejoinToken: joinerToken,
+      },
+    },
+  );
+
+  expect(joinResponse.ok()).toBe(true);
+
+  const rejoinResponse = await request.post(
+    `/api/tic-tac-toe/lobbies/${code}/join`,
+    {
+      data: {
+        playerName: "Ada",
+        rejoinToken: creatorToken,
+      },
+    },
+  );
+
+  expect(rejoinResponse.ok()).toBe(true);
+
+  const rejoined = await rejoinResponse.json();
+
+  expect(rejoined.playerId).toBe("X");
+  expect(rejoined.lobby.players).toHaveLength(2);
+});
+
 test("memory card lobby can be created, joined, and synced", async ({
   page,
   context,

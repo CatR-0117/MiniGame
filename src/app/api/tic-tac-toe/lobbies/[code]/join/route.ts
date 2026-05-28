@@ -14,7 +14,8 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const { code } = await context.params;
   const body = await readJsonObject(request);
   const playerName = readStringField(body, "playerName");
-  const result = joinTicTacToeLobbyByCode(code, playerName);
+  const rejoinToken = readStringField(body, "rejoinToken");
+  const result = joinTicTacToeLobbyByCode(code, playerName, rejoinToken);
 
   if (!result.ok) {
     return NextResponse.json(

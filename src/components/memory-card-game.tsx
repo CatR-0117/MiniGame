@@ -36,7 +36,15 @@ import {
   type MemorySoloGame,
 } from "@/lib/memory";
 import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  createRejoinToken,
+  forgetLobbySession,
+  readLobbySession,
+  rememberLobbySession,
+  type StoredLobbySession,
+} from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
+import { WaitingLobbyCountdown } from "@/components/waiting-lobby-countdown";
 
 type LobbyResponse = {
   lobby: MemoryLobby;
@@ -46,10 +54,7 @@ type LobbyWithPlayerResponse = LobbyResponse & {
   playerId: MemoryPlayerId;
 };
 
-type SavedMemorySession = {
-  code: string;
-  playerId: MemoryPlayerId;
-};
+type SavedMemorySession = StoredLobbySession<MemoryPlayerId>;
 
 type MemoryPlayMode = "solo" | "lobby";
 
@@ -127,11 +132,27 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 export function MemoryCardGame({
+  autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyLeave,
+  onLobbySessionChange,
+  playerName: externalPlayerName,
+  rejoinToken: externalRejoinToken,
   showLobbyJoinForm = true,
   showModeControls = true,
 }: {
+  autoJoinCode?: string | null;
   initialPlayMode?: MemoryPlayMode;
+  onLobbyLeave?: () => void;
+  onLobbySessionChange?: (session: {
+    code: string;
+    game: "memory";
+    isHost: boolean;
+    playerId: MemoryPlayerId;
+    rejoinToken: string;
+  }) => void;
+  playerName?: string;
+  rejoinToken?: string;
   showLobbyJoinForm?: boolean;
   showModeControls?: boolean;
 }) {
@@ -141,13 +162,16 @@ export function MemoryCardGame({
   );
   const [lobby, setLobby] = useState<MemoryLobby | null>(null);
   const [playerId, setPlayerId] = useState<MemoryPlayerId | null>(null);
-  const [playerName, setPlayerName] = useState("Player");
+  const [localPlayerName, setLocalPlayerName] = useState("Player");
+  const [localRejoinToken] = useState(() => createRejoinToken());
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(initialPlayMode === "lobby");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
+  const playerName = externalPlayerName ?? localPlayerName;
+  const sessionRejoinToken = externalRejoinToken ?? localRejoinToken;
 
   const refreshLobby = useCallback(async (code: string) => {
     const response = await getJson<LobbyResponse>(
@@ -156,6 +180,34 @@ export function MemoryCardGame({
 
     setLobby(response.lobby);
   }, []);
+
+  const joinLobbyByCode = useCallback(
+    async (code: string) => {
+      const response = await postJson<LobbyWithPlayerResponse>(
+        `/api/memory/lobbies/${encodeURIComponent(code)}/join`,
+        { playerName, rejoinToken: sessionRejoinToken },
+      );
+
+      setLobby(response.lobby);
+      setPlayerId(response.playerId);
+      setPlayMode("lobby");
+      rememberSession(
+        response.lobby.code,
+        response.playerId,
+        sessionRejoinToken,
+      );
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "memory",
+        isHost: response.playerId === "player-1",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
+
+      return response;
+    },
+    [onLobbySessionChange, playerName, sessionRejoinToken],
+  );
 
   useEffect(() => {
     if (initialPlayMode !== "lobby") {
@@ -170,6 +222,23 @@ export function MemoryCardGame({
         return;
       }
 
+      if (autoJoinCode) {
+        setPlayMode("lobby");
+
+        joinLobbyByCode(autoJoinCode)
+          .catch(() => {
+            if (isActive) {
+              setPlayerId(null);
+            }
+          })
+          .finally(() => {
+            if (isActive) {
+              setIsRestoring(false);
+            }
+          });
+        return;
+      }
+
       if (!savedSession) {
         setIsRestoring(false);
         return;
@@ -180,7 +249,7 @@ export function MemoryCardGame({
 
       refreshLobby(savedSession.code)
         .catch(() => {
-          window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          forgetLobbySession(SESSION_STORAGE_KEY);
 
           if (isActive) {
             setPlayerId(null);
@@ -197,7 +266,7 @@ export function MemoryCardGame({
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [initialPlayMode, refreshLobby]);
+  }, [autoJoinCode, initialPlayMode, joinLobbyByCode, refreshLobby]);
 
   useEffect(() => {
     if (!lobby?.code || playMode !== "lobby") {
@@ -287,14 +356,21 @@ export function MemoryCardGame({
     try {
       const response = await postJson<LobbyWithPlayerResponse>(
         "/api/memory/lobbies",
-        { playerName },
+        { playerName, rejoinToken: sessionRejoinToken },
       );
 
       setLobby(response.lobby);
       setPlayerId(response.playerId);
       setPlayMode("lobby");
       setJoinCode("");
-      rememberSession(response.lobby.code, response.playerId);
+      rememberSession(response.lobby.code, response.playerId, sessionRejoinToken);
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "memory",
+        isHost: response.playerId === "player-1",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -316,15 +392,7 @@ export function MemoryCardGame({
     setError("");
 
     try {
-      const response = await postJson<LobbyWithPlayerResponse>(
-        `/api/memory/lobbies/${encodeURIComponent(code)}/join`,
-        { playerName },
-      );
-
-      setLobby(response.lobby);
-      setPlayerId(response.playerId);
-      setPlayMode("lobby");
-      rememberSession(response.lobby.code, response.playerId);
+      await joinLobbyByCode(code);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -412,7 +480,8 @@ export function MemoryCardGame({
   }
 
   function handleLeaveLobby() {
-    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    forgetLobbySession(SESSION_STORAGE_KEY);
+    onLobbyLeave?.();
     setLobby(null);
     setPlayerId(null);
     setJoinCode("");
@@ -477,16 +546,18 @@ export function MemoryCardGame({
           )}
         >
           <div className="grid content-start gap-4">
-            <label className="grid gap-2 text-sm font-bold text-slate-200">
-              Player Name
-              <input
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
-                maxLength={24}
-                placeholder="Player"
-              />
-            </label>
+            {externalPlayerName === undefined ? (
+              <label className="grid gap-2 text-sm font-bold text-slate-200">
+                Player Name
+                <input
+                  value={playerName}
+                  onChange={(event) => setLocalPlayerName(event.target.value)}
+                  className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
+                  maxLength={24}
+                  placeholder="Player"
+                />
+              </label>
+            ) : null}
 
             <button
               type="button"
@@ -647,6 +718,10 @@ export function MemoryCardGame({
               </button>
             </div>
           </div>
+
+          {lobby.status === "waiting" && lobby.players.length < 2 ? (
+            <WaitingLobbyCountdown expiresAt={lobby.waitingExpiresAt} />
+          ) : null}
 
           <div className="grid gap-3">
             {lobby.players.map((player) => (
@@ -984,46 +1059,16 @@ function getPlayerStateText(
   return "Not Ready";
 }
 
-function rememberSession(code: string, playerId: MemoryPlayerId) {
-  window.sessionStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({ code, playerId }),
-  );
+function rememberSession(
+  code: string,
+  playerId: MemoryPlayerId,
+  rejoinToken: string,
+) {
+  rememberLobbySession(SESSION_STORAGE_KEY, { code, playerId, rejoinToken });
 }
 
 function readSavedSession(): SavedMemorySession | null {
-  const storedValue = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-
-  if (!storedValue) {
-    return null;
-  }
-
-  try {
-    const parsedValue: unknown = JSON.parse(storedValue);
-
-    if (
-      parsedValue &&
-      typeof parsedValue === "object" &&
-      !Array.isArray(parsedValue)
-    ) {
-      const { code, playerId } = parsedValue as Record<string, unknown>;
-
-      if (typeof code === "string" && typeof playerId === "string") {
-        const normalizedCode = cleanLobbyCode(code);
-
-        if (normalizedCode && isMemoryPlayerId(playerId)) {
-          return {
-            code: normalizedCode,
-            playerId,
-          };
-        }
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
+  return readLobbySession(SESSION_STORAGE_KEY, cleanLobbyCode, isMemoryPlayerId);
 }
 
 function getStatusText(

@@ -17,6 +17,7 @@ import {
   normalizeLobbyCode,
   type LobbyResult,
 } from "@/lib/lobby-utils";
+import { createRejoinTokenHash } from "@/lib/lobby-server";
 import {
   generateUniqueArcadeLobbyCode,
   registerArcadeLobbyCode,
@@ -26,7 +27,10 @@ const globalForHangman = globalThis as typeof globalThis & {
   __miniArcadeHangmanLobbies?: Map<string, HangmanLobby>;
 };
 
-export function createHangmanLobbyForPlayer(playerName: string): {
+export function createHangmanLobbyForPlayer(
+  playerName: string,
+  rejoinToken: string,
+): {
   lobby: HangmanLobbyView;
   playerId: HangmanPlayerId;
 } {
@@ -35,11 +39,52 @@ export function createHangmanLobbyForPlayer(playerName: string): {
   cleanupExpiredLobbies(lobbies, now);
 
   const code = generateUniqueArcadeLobbyCode();
-  const privateLobby = createHangmanLobby(code, playerName, now);
+  const privateLobby = createHangmanLobby(
+    code,
+    playerName,
+    now,
+    undefined,
+    createRejoinTokenHash(rejoinToken) ?? undefined,
+  );
   const lobby = getHangmanLobbyView(privateLobby, "player-1");
 
   lobbies.set(code, privateLobby);
   registerArcadeLobbyCode(code, "hangman");
+
+  if (!lobby) {
+    throw new Error("Failed to create lobby.");
+  }
+
+  return {
+    lobby,
+    playerId: "player-1",
+  };
+}
+
+export function createHangmanLobbyForHostCode(
+  code: string,
+  playerName: string,
+  rejoinToken: string,
+): {
+  lobby: HangmanLobbyView;
+  playerId: HangmanPlayerId;
+} {
+  const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
+  const normalizedCode = normalizeLobbyCode(code);
+  const privateLobby = createHangmanLobby(
+    normalizedCode,
+    playerName,
+    now,
+    undefined,
+    createRejoinTokenHash(rejoinToken) ?? undefined,
+  );
+  const lobby = getHangmanLobbyView(privateLobby, "player-1");
+
+  lobbies.set(normalizedCode, privateLobby);
+  registerArcadeLobbyCode(normalizedCode, "hangman");
 
   if (!lobby) {
     throw new Error("Failed to create lobby.");
@@ -74,16 +119,47 @@ export function getHangmanLobbyByCode(
 export function joinHangmanLobbyByCode(
   code: string,
   playerName: string,
+  rejoinToken: string,
 ): LobbyResult<{
   lobby: HangmanLobbyView;
   playerId: HangmanPlayerId;
 }> {
   const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = lobbies.get(normalizedCode);
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
+  }
+
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken) ?? undefined;
+  const rejoiningPlayer = rejoinTokenHash
+    ? lobby.players.find((player) => player.rejoinTokenHash === rejoinTokenHash)
+    : null;
+
+  if (rejoiningPlayer) {
+    const nextLobby = {
+      ...lobby,
+      updatedAt: now,
+    };
+    const lobbyView = getHangmanLobbyView(nextLobby, rejoiningPlayer.id);
+
+    if (!lobbyView) {
+      return lobbyError(403, "Player is not in this lobby.");
+    }
+
+    lobbies.set(normalizedCode, nextLobby);
+
+    return {
+      ok: true,
+      data: {
+        lobby: lobbyView,
+        playerId: rejoiningPlayer.id,
+      },
+    };
   }
 
   if (lobby.players.length >= 2) {
@@ -94,7 +170,12 @@ export function joinHangmanLobbyByCode(
     return lobbyError(409, "Game already started.");
   }
 
-  const nextLobby = joinHangmanLobby(lobby, playerName);
+  const nextLobby = joinHangmanLobby(
+    lobby,
+    playerName,
+    now,
+    rejoinTokenHash,
+  );
   const playerId = nextLobby.players.at(-1)?.id;
 
   if (!playerId) {
@@ -197,6 +278,21 @@ export function restartHangmanLobbyRound(
   return getLobbyViewResult(nextLobby, authResult.data.playerId);
 }
 
+export function deleteHangmanLobbyByCode(code: string): void {
+  getLobbyStore().delete(normalizeLobbyCode(code));
+}
+
+export function isHangmanLobbyHost(code: string, rejoinToken: string): boolean {
+  const lobby = getLobbyStore().get(normalizeLobbyCode(code));
+  const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
+
+  return Boolean(
+    lobby?.players[0]?.id === "player-1" &&
+      rejoinTokenHash &&
+      lobby.players[0].rejoinTokenHash === rejoinTokenHash,
+  );
+}
+
 function getAuthorizedLobby(
   code: string,
   playerId: string,
@@ -206,6 +302,9 @@ function getAuthorizedLobby(
   playerId: HangmanPlayerId;
 }> {
   const lobbies = getLobbyStore();
+  const now = Date.now();
+  cleanupExpiredLobbies(lobbies, now);
+
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = lobbies.get(normalizedCode);
 

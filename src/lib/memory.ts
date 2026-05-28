@@ -1,4 +1,4 @@
-import { sanitizePlayerName } from "@/lib/lobby-utils";
+import { getWaitingLobbyExpiresAt, sanitizePlayerName } from "@/lib/lobby-utils";
 
 export const MEMORY_CARD_VALUES = [
   "anchor",
@@ -26,6 +26,7 @@ export type MemoryPlayer = {
   name: string;
   isReady: boolean;
   score: number;
+  rejoinTokenHash?: string;
 };
 
 export type MemoryCard = {
@@ -45,6 +46,7 @@ export type MemoryLobby = {
   pendingHideAt: number | null;
   createdAt: number;
   updatedAt: number;
+  waitingExpiresAt: number | null;
 };
 
 export type MemorySoloGame = {
@@ -64,6 +66,7 @@ export function createMemoryLobby(
   code: string,
   playerName = "Player 1",
   now = Date.now(),
+  rejoinTokenHash?: string,
 ): MemoryLobby {
   return {
     code,
@@ -74,6 +77,7 @@ export function createMemoryLobby(
         name: sanitizePlayerName(playerName, "Player 1"),
         isReady: false,
         score: 0,
+        ...(rejoinTokenHash ? { rejoinTokenHash } : {}),
       },
     ],
     currentPlayerId: "player-1",
@@ -83,6 +87,7 @@ export function createMemoryLobby(
     pendingHideAt: null,
     createdAt: now,
     updatedAt: now,
+    waitingExpiresAt: getWaitingLobbyExpiresAt(now),
   };
 }
 
@@ -101,6 +106,7 @@ export function joinMemoryLobby(
   lobby: MemoryLobby,
   playerName = "Player 2",
   now = Date.now(),
+  rejoinTokenHash?: string,
 ): MemoryLobby {
   if (lobby.players.length >= PLAYER_IDS.length) {
     return lobby;
@@ -117,10 +123,12 @@ export function joinMemoryLobby(
         name: sanitizePlayerName(playerName, `Player ${lobby.players.length + 1}`),
         isReady: false,
         score: 0,
+        ...(rejoinTokenHash ? { rejoinTokenHash } : {}),
       },
     ],
     status: "readying",
     updatedAt: now,
+    waitingExpiresAt: null,
   };
 }
 
@@ -150,6 +158,10 @@ export function readyMemoryPlayer(
           ? "playing"
           : "readying",
     updatedAt: now,
+    waitingExpiresAt:
+      players.length < PLAYER_IDS.length
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 }
 
@@ -171,6 +183,10 @@ export function restartMemoryLobby(
     winnerId: null,
     pendingHideAt: null,
     updatedAt: now,
+    waitingExpiresAt:
+      lobby.players.length < PLAYER_IDS.length
+        ? (lobby.waitingExpiresAt ?? getWaitingLobbyExpiresAt(now))
+        : null,
   };
 }
 

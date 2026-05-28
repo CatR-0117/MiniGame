@@ -32,8 +32,16 @@ import {
   type ScoreState,
 } from "@/lib/game";
 import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
+import {
+  createRejoinToken,
+  forgetLobbySession,
+  readLobbySession,
+  rememberLobbySession,
+  type StoredLobbySession,
+} from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
 import type { TicTacToeLobby } from "@/lib/tic-tac-toe-lobbies";
+import { WaitingLobbyCountdown } from "@/components/waiting-lobby-countdown";
 
 type TicTacToePlayMode = GameMode | "online";
 
@@ -45,10 +53,7 @@ type LobbyWithPlayerResponse = LobbyResponse & {
   playerId: Player;
 };
 
-type SavedTicTacToeSession = {
-  code: string;
-  playerId: Player;
-};
+type SavedTicTacToeSession = StoredLobbySession<Player>;
 
 const PLAYER_THEME: Record<
   Player,
@@ -93,11 +98,27 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 export function TicTacToeGame({
+  autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyLeave,
+  onLobbySessionChange,
+  playerName: externalPlayerName,
+  rejoinToken: externalRejoinToken,
   showLobbyJoinForm = true,
   showModeControls = true,
 }: {
+  autoJoinCode?: string | null;
   initialPlayMode?: TicTacToePlayMode;
+  onLobbyLeave?: () => void;
+  onLobbySessionChange?: (session: {
+    code: string;
+    game: "tic-tac-toe";
+    isHost: boolean;
+    playerId: Player;
+    rejoinToken: string;
+  }) => void;
+  playerName?: string;
+  rejoinToken?: string;
   showLobbyJoinForm?: boolean;
   showModeControls?: boolean;
 }) {
@@ -108,13 +129,16 @@ export function TicTacToeGame({
   );
   const [lobby, setLobby] = useState<TicTacToeLobby | null>(null);
   const [playerId, setPlayerId] = useState<Player | null>(null);
-  const [playerName, setPlayerName] = useState("Player");
+  const [localPlayerName, setLocalPlayerName] = useState("Player");
+  const [localRejoinToken] = useState(() => createRejoinToken());
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingMoveIndex, setPendingMoveIndex] = useState<number | null>(null);
   const [isRestoring, setIsRestoring] = useState(initialPlayMode === "online");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
+  const playerName = externalPlayerName ?? localPlayerName;
+  const sessionRejoinToken = externalRejoinToken ?? localRejoinToken;
 
   const { mode, round, scores } = game;
   const isBotTurn =
@@ -131,6 +155,33 @@ export function TicTacToeGame({
     setLobby(response.lobby);
   }, []);
 
+  const joinLobbyByCode = useCallback(
+    async (code: string) => {
+      const response = await postJson<LobbyWithPlayerResponse>(
+        `/api/tic-tac-toe/lobbies/${encodeURIComponent(code)}/join`,
+        { playerName, rejoinToken: sessionRejoinToken },
+      );
+
+      setLobby(response.lobby);
+      setPlayerId(response.playerId);
+      rememberSession(
+        response.lobby.code,
+        response.playerId,
+        sessionRejoinToken,
+      );
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "tic-tac-toe",
+        isHost: response.playerId === "X",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
+
+      return response;
+    },
+    [onLobbySessionChange, playerName, sessionRejoinToken],
+  );
+
   useEffect(() => {
     if (initialPlayMode !== "online") {
       return;
@@ -144,6 +195,23 @@ export function TicTacToeGame({
         return;
       }
 
+      if (autoJoinCode) {
+        setPlayMode("online");
+
+        joinLobbyByCode(autoJoinCode)
+          .catch(() => {
+            if (isActive) {
+              setPlayerId(null);
+            }
+          })
+          .finally(() => {
+            if (isActive) {
+              setIsRestoring(false);
+            }
+          });
+        return;
+      }
+
       if (!savedSession) {
         setIsRestoring(false);
         return;
@@ -154,7 +222,7 @@ export function TicTacToeGame({
 
       refreshLobby(savedSession.code)
         .catch(() => {
-          window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          forgetLobbySession(SESSION_STORAGE_KEY);
 
           if (isActive) {
             setPlayerId(null);
@@ -171,7 +239,7 @@ export function TicTacToeGame({
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [initialPlayMode, refreshLobby]);
+  }, [autoJoinCode, initialPlayMode, joinLobbyByCode, refreshLobby]);
 
   useEffect(() => {
     if (!isBotTurn) {
@@ -262,13 +330,20 @@ export function TicTacToeGame({
     try {
       const response = await postJson<LobbyWithPlayerResponse>(
         "/api/tic-tac-toe/lobbies",
-        { playerName },
+        { playerName, rejoinToken: sessionRejoinToken },
       );
 
       setLobby(response.lobby);
       setPlayerId(response.playerId);
       setJoinCode("");
-      rememberSession(response.lobby.code, response.playerId);
+      rememberSession(response.lobby.code, response.playerId, sessionRejoinToken);
+      onLobbySessionChange?.({
+        code: response.lobby.code,
+        game: "tic-tac-toe",
+        isHost: response.playerId === "X",
+        playerId: response.playerId,
+        rejoinToken: sessionRejoinToken,
+      });
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -290,14 +365,7 @@ export function TicTacToeGame({
     setError("");
 
     try {
-      const response = await postJson<LobbyWithPlayerResponse>(
-        `/api/tic-tac-toe/lobbies/${encodeURIComponent(code)}/join`,
-        { playerName },
-      );
-
-      setLobby(response.lobby);
-      setPlayerId(response.playerId);
-      rememberSession(response.lobby.code, response.playerId);
+      await joinLobbyByCode(code);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -407,7 +475,8 @@ export function TicTacToeGame({
   }
 
   function handleLeaveLobby() {
-    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    forgetLobbySession(SESSION_STORAGE_KEY);
+    onLobbyLeave?.();
     setLobby(null);
     setPlayerId(null);
     setJoinCode("");
@@ -457,9 +526,10 @@ export function TicTacToeGame({
           onCreateLobby={handleCreateLobby}
           onJoinCodeChange={(value) => setJoinCode(cleanLobbyCode(value))}
           onJoinLobby={handleJoinLobby}
-          onPlayerNameChange={setPlayerName}
+          onPlayerNameChange={setLocalPlayerName}
           playerName={playerName}
           showJoinForm={showLobbyJoinForm}
+          showPlayerNameInput={externalPlayerName === undefined}
         />
       ) : null}
 
@@ -539,6 +609,7 @@ function TicTacToeLobbySetup({
   onPlayerNameChange,
   playerName,
   showJoinForm,
+  showPlayerNameInput,
 }: {
   error: string;
   isBusy: boolean;
@@ -549,6 +620,7 @@ function TicTacToeLobbySetup({
   onPlayerNameChange: (value: string) => void;
   playerName: string;
   showJoinForm: boolean;
+  showPlayerNameInput: boolean;
 }) {
   return (
     <section
@@ -558,16 +630,18 @@ function TicTacToeLobbySetup({
       )}
     >
       <div className="grid content-start gap-4">
-        <label className="grid gap-2 text-sm font-bold text-slate-200">
-          Player Name
-          <input
-            value={playerName}
-            onChange={(event) => onPlayerNameChange(event.target.value)}
-            className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
-            maxLength={24}
-            placeholder="Player"
-          />
-        </label>
+        {showPlayerNameInput ? (
+          <label className="grid gap-2 text-sm font-bold text-slate-200">
+            Player Name
+            <input
+              value={playerName}
+              onChange={(event) => onPlayerNameChange(event.target.value)}
+              className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-teal-200/80"
+              maxLength={24}
+              placeholder="Player"
+            />
+          </label>
+        ) : null}
 
         <button
           type="button"
@@ -795,6 +869,10 @@ function OnlineLobbyPanel({
           </button>
         </div>
       </div>
+
+      {lobby.status === "waiting" && lobby.players.length < 2 ? (
+        <WaitingLobbyCountdown expiresAt={lobby.waitingExpiresAt} />
+      ) : null}
 
       <div className="grid gap-3">
         {(["X", "O"] as const).map((player) => {
@@ -1136,50 +1214,16 @@ function cleanLobbyCode(value: string): string {
   return normalizeLobbyCode(value).slice(0, 6);
 }
 
-function rememberSession(code: string, playerId: Player) {
-  window.sessionStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({ code, playerId }),
-  );
+function rememberSession(
+  code: string,
+  playerId: Player,
+  rejoinToken: string,
+) {
+  rememberLobbySession(SESSION_STORAGE_KEY, { code, playerId, rejoinToken });
 }
 
 function readSavedSession(): SavedTicTacToeSession | null {
-  const storedValue = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
-
-  if (!storedValue) {
-    return null;
-  }
-
-  try {
-    const parsedValue: unknown = JSON.parse(storedValue);
-
-    if (
-      parsedValue &&
-      typeof parsedValue === "object" &&
-      !Array.isArray(parsedValue)
-    ) {
-      const { code, playerId } = parsedValue as Record<string, unknown>;
-
-      if (
-        typeof code === "string" &&
-        typeof playerId === "string" &&
-        isPlayer(playerId)
-      ) {
-        const normalizedCode = cleanLobbyCode(code);
-
-        if (normalizedCode) {
-          return {
-            code: normalizedCode,
-            playerId,
-          };
-        }
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
+  return readLobbySession(SESSION_STORAGE_KEY, cleanLobbyCode, isPlayer);
 }
 
 function isPlayer(value: string): value is Player {
