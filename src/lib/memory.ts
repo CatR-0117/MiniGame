@@ -13,12 +13,18 @@ export const MEMORY_CARD_VALUES = [
 
 export type MemoryCardValue = (typeof MEMORY_CARD_VALUES)[number];
 export type MemoryPlayerId = "player-1" | "player-2";
-export type MemoryStatus = "waiting" | "playing" | "settling" | "finished";
-export type MemorySoloStatus = Exclude<MemoryStatus, "waiting">;
+export type MemoryStatus =
+  | "waiting"
+  | "readying"
+  | "playing"
+  | "settling"
+  | "finished";
+export type MemorySoloStatus = Exclude<MemoryStatus, "waiting" | "readying">;
 
 export type MemoryPlayer = {
   id: MemoryPlayerId;
   name: string;
+  isReady: boolean;
   score: number;
 };
 
@@ -66,6 +72,7 @@ export function createMemoryLobby(
       {
         id: "player-1",
         name: sanitizePlayerName(playerName, "Player 1"),
+        isReady: false,
         score: 0,
       },
     ],
@@ -108,10 +115,40 @@ export function joinMemoryLobby(
       {
         id: nextPlayerId,
         name: sanitizePlayerName(playerName, `Player ${lobby.players.length + 1}`),
+        isReady: false,
         score: 0,
       },
     ],
-    status: "playing",
+    status: "readying",
+    updatedAt: now,
+  };
+}
+
+export function readyMemoryPlayer(
+  lobby: MemoryLobby,
+  playerId: MemoryPlayerId,
+  now = Date.now(),
+): MemoryLobby {
+  if (lobby.status !== "waiting" && lobby.status !== "readying") {
+    return lobby;
+  }
+
+  const players = lobby.players.map((player) =>
+    player.id === playerId ? { ...player, isReady: true } : player,
+  );
+  const shouldStart =
+    players.length === PLAYER_IDS.length &&
+    players.every((player) => player.isReady);
+
+  return {
+    ...lobby,
+    players,
+    status:
+      players.length < PLAYER_IDS.length
+        ? "waiting"
+        : shouldStart
+          ? "playing"
+          : "readying",
     updatedAt: now,
   };
 }
@@ -125,11 +162,12 @@ export function restartMemoryLobby(
     cards: createMemoryDeck(),
     players: lobby.players.map((player) => ({
       ...player,
+      isReady: false,
       score: 0,
     })),
     currentPlayerId: "player-1",
     flippedCardIds: [],
-    status: lobby.players.length === PLAYER_IDS.length ? "playing" : "waiting",
+    status: lobby.players.length === PLAYER_IDS.length ? "readying" : "waiting",
     winnerId: null,
     pendingHideAt: null,
     updatedAt: now,

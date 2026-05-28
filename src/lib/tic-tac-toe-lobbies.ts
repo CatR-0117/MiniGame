@@ -6,18 +6,26 @@ import {
 } from "@/lib/game";
 import {
   cleanupExpiredLobbies,
-  generateUniqueLobbyCode,
   lobbyError,
   normalizeLobbyCode,
   sanitizePlayerName,
   type LobbyResult,
 } from "@/lib/lobby-utils";
+import {
+  generateUniqueArcadeLobbyCode,
+  registerArcadeLobbyCode,
+} from "@/lib/arcade-lobby-directory";
 
-export type TicTacToeLobbyStatus = "waiting" | "playing" | "finished";
+export type TicTacToeLobbyStatus =
+  | "waiting"
+  | "readying"
+  | "playing"
+  | "finished";
 
 export type TicTacToeLobbyPlayer = {
   id: Player;
   name: string;
+  isReady: boolean;
 };
 
 export type TicTacToeLobby = {
@@ -41,9 +49,10 @@ export function createTicTacToeLobbyForPlayer(playerName: string): {
   const now = Date.now();
   cleanupExpiredLobbies(lobbies, now);
 
-  const code = generateUniqueLobbyCode(lobbies);
+  const code = generateUniqueArcadeLobbyCode();
   const lobby = createTicTacToeLobby(code, playerName, now);
   lobbies.set(code, lobby);
+  registerArcadeLobbyCode(code, "tic-tac-toe");
 
   return {
     lobby,
@@ -96,9 +105,10 @@ export function joinTicTacToeLobbyByCode(
       {
         id: "O",
         name: sanitizePlayerName(playerName, "Player O"),
+        isReady: false,
       },
     ],
-    status: lobby.game.round.status === "won" ? "finished" : "playing",
+    status: "readying",
     updatedAt: Date.now(),
   };
 
@@ -187,7 +197,7 @@ export function startNewTicTacToeLobbyRound(
   }
 
   const game = gameReducer(lobbyResult.data.lobby.game, { type: "NEW_ROUND" });
-  const nextLobby = updateLobbyGame(lobbyResult.data.lobby, game);
+  const nextLobby = resetLobbyReadiness(lobbyResult.data.lobby, game);
   getLobbyStore().set(nextLobby.code, nextLobby);
 
   return {
@@ -219,7 +229,54 @@ export function resetTicTacToeLobbyMatch(
   const game = gameReducer(lobbyResult.data.lobby.game, {
     type: "RESET_SCORES",
   });
-  const nextLobby = updateLobbyGame(lobbyResult.data.lobby, game);
+  const nextLobby = resetLobbyReadiness(lobbyResult.data.lobby, game);
+  getLobbyStore().set(nextLobby.code, nextLobby);
+
+  return {
+    ok: true,
+    data: {
+      lobby: nextLobby,
+    },
+  };
+}
+
+export function readyTicTacToeLobbyPlayer(
+  code: string,
+  playerId: string,
+): LobbyResult<{
+  lobby: TicTacToeLobby;
+}> {
+  const lobbyResult = getTicTacToeLobbyByCode(code);
+
+  if (!lobbyResult.ok) {
+    return lobbyResult;
+  }
+
+  const authResult = authorizeLobbyPlayer(lobbyResult.data.lobby, playerId);
+
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  const { lobby } = lobbyResult.data;
+
+  if (lobby.status !== "waiting" && lobby.status !== "readying") {
+    return lobbyError(409, "Round already started.");
+  }
+
+  const players = lobby.players.map((player) =>
+    player.id === playerId ? { ...player, isReady: true } : player,
+  );
+  const shouldStart =
+    players.length === 2 && players.every((player) => player.isReady);
+  const nextLobby: TicTacToeLobby = {
+    ...lobby,
+    players,
+    status:
+      players.length < 2 ? "waiting" : shouldStart ? "playing" : "readying",
+    updatedAt: Date.now(),
+  };
+
   getLobbyStore().set(nextLobby.code, nextLobby);
 
   return {
@@ -245,12 +302,29 @@ function createTicTacToeLobby(
       {
         id: "X",
         name: sanitizePlayerName(playerName, "Player X"),
+        isReady: false,
       },
     ],
     game: createGameState("duo"),
     status: "waiting",
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+function resetLobbyReadiness(
+  lobby: TicTacToeLobby,
+  game: GameState,
+): TicTacToeLobby {
+  return {
+    ...lobby,
+    game,
+    players: lobby.players.map((player) => ({
+      ...player,
+      isReady: false,
+    })),
+    status: lobby.players.length < 2 ? "waiting" : "readying",
+    updatedAt: Date.now(),
   };
 }
 

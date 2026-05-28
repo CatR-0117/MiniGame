@@ -3,6 +3,7 @@ import {
   flipMemoryCard,
   isMemoryPlayerId,
   joinMemoryLobby,
+  readyMemoryPlayer,
   restartMemoryLobby,
   settleMemoryLobby,
   type MemoryLobby,
@@ -10,11 +11,14 @@ import {
 } from "@/lib/memory";
 import {
   cleanupExpiredLobbies,
-  generateUniqueLobbyCode,
   lobbyError,
   normalizeLobbyCode,
   type LobbyResult,
 } from "@/lib/lobby-utils";
+import {
+  generateUniqueArcadeLobbyCode,
+  registerArcadeLobbyCode,
+} from "@/lib/arcade-lobby-directory";
 
 const globalForMemory = globalThis as typeof globalThis & {
   __miniArcadeMemoryLobbies?: Map<string, MemoryLobby>;
@@ -28,9 +32,10 @@ export function createLobbyForPlayer(playerName: string): {
   const now = Date.now();
   cleanupExpiredLobbies(lobbies, now);
 
-  const code = generateUniqueLobbyCode(lobbies);
+  const code = generateUniqueArcadeLobbyCode();
   const lobby = createMemoryLobby(code, playerName, now);
   lobbies.set(code, lobby);
+  registerArcadeLobbyCode(code, "memory");
 
   return {
     lobby,
@@ -125,6 +130,43 @@ export function flipLobbyCard(
   }
 
   const nextLobby = flipMemoryCard(lobby, playerId, cardId);
+  getLobbyStore().set(lobby.code, nextLobby);
+
+  return {
+    ok: true,
+    data: {
+      lobby: nextLobby,
+    },
+  };
+}
+
+export function readyLobbyPlayer(
+  code: string,
+  playerId: string,
+): LobbyResult<{
+  lobby: MemoryLobby;
+}> {
+  const lobbyResult = getLobbyByCode(code);
+
+  if (!lobbyResult.ok) {
+    return lobbyResult;
+  }
+
+  if (!isMemoryPlayerId(playerId)) {
+    return lobbyError(400, "Invalid player.");
+  }
+
+  const { lobby } = lobbyResult.data;
+
+  if (!lobby.players.some((player) => player.id === playerId)) {
+    return lobbyError(403, "Player is not in this lobby.");
+  }
+
+  if (lobby.status !== "waiting" && lobby.status !== "readying") {
+    return lobbyError(409, "Round already started.");
+  }
+
+  const nextLobby = readyMemoryPlayer(lobby, playerId);
   getLobbyStore().set(lobby.code, nextLobby);
 
   return {

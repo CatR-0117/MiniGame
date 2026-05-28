@@ -92,10 +92,19 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function TicTacToeGame() {
-  const [playMode, setPlayMode] = useState<TicTacToePlayMode>("solo");
+export function TicTacToeGame({
+  initialPlayMode = "solo",
+  showLobbyJoinForm = true,
+  showModeControls = true,
+}: {
+  initialPlayMode?: TicTacToePlayMode;
+  showLobbyJoinForm?: boolean;
+  showModeControls?: boolean;
+}) {
+  const [playMode, setPlayMode] =
+    useState<TicTacToePlayMode>(initialPlayMode);
   const [game, dispatch] = useReducer(gameReducer, undefined, () =>
-    createGameState("solo"),
+    createGameState(initialPlayMode === "duo" ? "duo" : "solo"),
   );
   const [lobby, setLobby] = useState<TicTacToeLobby | null>(null);
   const [playerId, setPlayerId] = useState<Player | null>(null);
@@ -104,7 +113,7 @@ export function TicTacToeGame() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingMoveIndex, setPendingMoveIndex] = useState<number | null>(null);
-  const [isRestoring, setIsRestoring] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(initialPlayMode === "online");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
 
   const { mode, round, scores } = game;
@@ -123,6 +132,10 @@ export function TicTacToeGame() {
   }, []);
 
   useEffect(() => {
+    if (initialPlayMode !== "online") {
+      return;
+    }
+
     const savedSession = readSavedSession();
     let isActive = true;
 
@@ -158,7 +171,7 @@ export function TicTacToeGame() {
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [refreshLobby]);
+  }, [initialPlayMode, refreshLobby]);
 
   useEffect(() => {
     if (!isBotTurn) {
@@ -361,6 +374,28 @@ export function TicTacToeGame() {
     }
   }
 
+  async function handleOnlineReady() {
+    if (!lobby || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError("");
+
+    try {
+      const response = await postJson<LobbyResponse>(
+        `/api/tic-tac-toe/lobbies/${encodeURIComponent(lobby.code)}/ready`,
+        { playerId },
+      );
+
+      setLobby(response.lobby);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleCopyLobbyCode() {
     if (!lobby) {
       return;
@@ -391,25 +426,27 @@ export function TicTacToeGame() {
           </h2>
         </div>
 
-        <div className="grid w-full grid-cols-3 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
-          {MODE_OPTIONS.map(({ mode: optionMode, label, icon: Icon }) => (
-            <button
-              key={optionMode}
-              type="button"
-              aria-pressed={playMode === optionMode}
-              onClick={() => handleModeChange(optionMode)}
-              className={cn(
-                "flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-bold transition sm:gap-2 sm:px-4 sm:text-sm",
-                playMode === optionMode
-                  ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white",
-              )}
-            >
-              <Icon aria-hidden="true" className="size-4 shrink-0" />
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
-        </div>
+        {showModeControls ? (
+          <div className="grid w-full grid-cols-3 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
+            {MODE_OPTIONS.map(({ mode: optionMode, label, icon: Icon }) => (
+              <button
+                key={optionMode}
+                type="button"
+                aria-pressed={playMode === optionMode}
+                onClick={() => handleModeChange(optionMode)}
+                className={cn(
+                  "flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-bold transition sm:gap-2 sm:px-4 sm:text-sm",
+                  playMode === optionMode
+                    ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       {playMode === "online" && !lobby ? (
@@ -422,6 +459,7 @@ export function TicTacToeGame() {
           onJoinLobby={handleJoinLobby}
           onPlayerNameChange={setPlayerName}
           playerName={playerName}
+          showJoinForm={showLobbyJoinForm}
         />
       ) : null}
 
@@ -451,12 +489,21 @@ export function TicTacToeGame() {
       {playMode === "online" && lobby && onlineRound && onlineScores ? (
         <TicTacToePlaySurface
           actionButtons={
-            <OnlineActionButtons
-              disabled={isBusy || !playerId}
-              onLeave={handleLeaveLobby}
-              onNewRound={handleOnlineNewRound}
-              onReset={handleOnlineReset}
-            />
+            lobby.status === "waiting" || lobby.status === "readying" ? (
+              <OnlineReadyActions
+                disabled={isBusy || !playerId || Boolean(localPlayer?.isReady)}
+                isReady={Boolean(localPlayer?.isReady)}
+                onLeave={handleLeaveLobby}
+                onReady={handleOnlineReady}
+              />
+            ) : (
+              <OnlineActionButtons
+                disabled={isBusy || !playerId}
+                onLeave={handleLeaveLobby}
+                onNewRound={handleOnlineNewRound}
+                onReset={handleOnlineReset}
+              />
+            )
           }
           boardLocked={onlineBoardLocked}
           lobbyPanel={
@@ -491,6 +538,7 @@ function TicTacToeLobbySetup({
   onJoinLobby,
   onPlayerNameChange,
   playerName,
+  showJoinForm,
 }: {
   error: string;
   isBusy: boolean;
@@ -500,9 +548,15 @@ function TicTacToeLobbySetup({
   onJoinLobby: (event: FormEvent<HTMLFormElement>) => void;
   onPlayerNameChange: (value: string) => void;
   playerName: string;
+  showJoinForm: boolean;
 }) {
   return (
-    <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+    <section
+      className={cn(
+        "grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4",
+        showJoinForm && "lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]",
+      )}
+    >
       <div className="grid content-start gap-4">
         <label className="grid gap-2 text-sm font-bold text-slate-200">
           Player Name
@@ -526,29 +580,31 @@ function TicTacToeLobbySetup({
         </button>
       </div>
 
-      <form onSubmit={onJoinLobby} className="grid content-start gap-4">
-        <label className="grid gap-2 text-sm font-bold text-slate-200">
-          Lobby Code
-          <input
-            aria-label="Tic-Tac-Toe lobby code"
-            value={joinCode}
-            onChange={(event) => onJoinCodeChange(event.target.value)}
-            className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
-            inputMode="text"
-            maxLength={6}
-            placeholder="ABC123"
-          />
-        </label>
+      {showJoinForm ? (
+        <form onSubmit={onJoinLobby} className="grid content-start gap-4">
+          <label className="grid gap-2 text-sm font-bold text-slate-200">
+            Lobby Code
+            <input
+              aria-label="Tic-Tac-Toe lobby code"
+              value={joinCode}
+              onChange={(event) => onJoinCodeChange(event.target.value)}
+              className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
+              inputMode="text"
+              maxLength={6}
+              placeholder="ABC123"
+            />
+          </label>
 
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
-        >
-          <LogIn aria-hidden="true" className="size-4" />
-          Join Lobby
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
+          >
+            <LogIn aria-hidden="true" className="size-4" />
+            Join Lobby
+          </button>
+        </form>
+      ) : null}
 
       {error ? <ErrorMessage message={error} /> : null}
     </section>
@@ -751,10 +807,15 @@ function OnlineLobbyPanel({
           return (
             <OnlinePlayerPanel
               key={player}
-              isCurrent={lobby.game.round.currentPlayer === player}
+              isCurrent={
+                lobby.status === "playing" &&
+                lobby.game.round.currentPlayer === player
+              }
               isLocal={localPlayerId === player}
+              isReady={lobbyPlayer.isReady}
               name={lobbyPlayer.name}
               player={player}
+              status={lobby.status}
             />
           );
         })}
@@ -766,13 +827,17 @@ function OnlineLobbyPanel({
 function OnlinePlayerPanel({
   isCurrent,
   isLocal,
+  isReady,
   name,
   player,
+  status,
 }: {
   isCurrent: boolean;
   isLocal: boolean;
+  isReady: boolean;
   name: string;
   player: Player;
+  status: TicTacToeLobby["status"];
 }) {
   return (
     <div
@@ -788,13 +853,47 @@ function OnlinePlayerPanel({
         <div className="min-w-0">
           <p className="truncate text-base font-black text-white">{name}</p>
           <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-            {isLocal ? "You" : isCurrent ? "Turn" : "Ready"}
+            {getOnlinePlayerStateText(isCurrent, isLocal, isReady, status)}
           </p>
         </div>
         <span className={cn("text-4xl font-black", PLAYER_THEME[player].text)}>
           {player}
         </span>
       </div>
+    </div>
+  );
+}
+
+function OnlineReadyActions({
+  disabled,
+  isReady,
+  onLeave,
+  onReady,
+}: {
+  disabled: boolean;
+  isReady: boolean;
+  onLeave: () => void;
+  onReady: () => void;
+}) {
+  return (
+    <div className="grid gap-3">
+      <button
+        type="button"
+        onClick={onReady}
+        disabled={disabled}
+        className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-teal-300 px-3 text-sm font-black text-slate-950 transition hover:bg-teal-200 disabled:cursor-default disabled:opacity-70"
+      >
+        <Sparkles aria-hidden="true" className="size-4" />
+        {isReady ? "Ready" : "Ready"}
+      </button>
+      <button
+        type="button"
+        onClick={onLeave}
+        className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-sm font-black text-slate-100 transition hover:bg-white/12"
+      >
+        <LogOut aria-hidden="true" className="size-4" />
+        Leave Lobby
+      </button>
     </div>
   );
 }
@@ -808,6 +907,27 @@ function WaitingPlayerPanel({ player }: { player: Player }) {
       <p className="mt-3 text-base font-black text-slate-300">Waiting</p>
     </div>
   );
+}
+
+function getOnlinePlayerStateText(
+  isCurrent: boolean,
+  isLocal: boolean,
+  isReady: boolean,
+  status: TicTacToeLobby["status"],
+): string {
+  if (isCurrent) {
+    return "Turn";
+  }
+
+  if (status === "playing" || status === "finished") {
+    return isLocal ? "You" : "Ready";
+  }
+
+  if (isReady) {
+    return isLocal ? "You" : "Ready";
+  }
+
+  return "Not Ready";
 }
 
 function ScorePanel({
@@ -980,7 +1100,15 @@ function getOnlineStatusText(
   }
 
   if (lobby.status === "waiting") {
-    return "Waiting for Player O";
+    const localPlayer = lobby.players.find((player) => player.id === playerId);
+
+    return localPlayer?.isReady ? "Waiting for Player O" : "Ready to play";
+  }
+
+  if (lobby.status === "readying") {
+    const localPlayer = lobby.players.find((player) => player.id === playerId);
+
+    return localPlayer?.isReady ? "Waiting for opponent" : "Ready to play";
   }
 
   if (lobby.status === "finished") {

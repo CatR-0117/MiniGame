@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mini Arcade | Tic-Tac-Toe, Memory Cards, and Hangman",
+  title: "Mini Arcade Games",
   description: "A mobile-friendly mini arcade with local and lobby-based games.",
 };
 

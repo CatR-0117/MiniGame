@@ -60,8 +60,16 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function HangmanGame() {
-  const [playMode, setPlayMode] = useState<HangmanPlayMode>("solo");
+export function HangmanGame({
+  initialPlayMode = "solo",
+  showLobbyJoinForm = true,
+  showModeControls = true,
+}: {
+  initialPlayMode?: HangmanPlayMode;
+  showLobbyJoinForm?: boolean;
+  showModeControls?: boolean;
+}) {
+  const [playMode, setPlayMode] = useState<HangmanPlayMode>(initialPlayMode);
   const [soloPuzzle, setSoloPuzzle] = useState<HangmanPuzzle>(() =>
     pickHangmanPuzzle(),
   );
@@ -73,7 +81,7 @@ export function HangmanGame() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingLetter, setPendingLetter] = useState<string | null>(null);
-  const [isRestoring, setIsRestoring] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(initialPlayMode === "lobby");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
 
   const soloWordLetters = useMemo(
@@ -107,6 +115,10 @@ export function HangmanGame() {
   );
 
   useEffect(() => {
+    if (initialPlayMode !== "lobby") {
+      return;
+    }
+
     const savedSession = readSavedSession();
     let isActive = true;
 
@@ -142,7 +154,7 @@ export function HangmanGame() {
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [refreshLobby]);
+  }, [initialPlayMode, refreshLobby]);
 
   useEffect(() => {
     if (!lobby?.code || !playerId || playMode !== "lobby") {
@@ -410,6 +422,7 @@ export function HangmanGame() {
           }
           onModeChange={handleModeChange}
           playMode={playMode}
+          showModeControls={showModeControls}
         />
 
         <HangmanPlaySurface
@@ -464,6 +477,7 @@ export function HangmanGame() {
         <HangmanHeader
           onModeChange={handleModeChange}
           playMode={playMode}
+          showModeControls={showModeControls}
         />
 
         <HangmanLobbySetup
@@ -475,6 +489,7 @@ export function HangmanGame() {
           onJoinLobby={handleJoinLobby}
           onPlayerNameChange={setPlayerName}
           playerName={playerName}
+          showJoinForm={showLobbyJoinForm}
         />
       </section>
     );
@@ -511,6 +526,7 @@ export function HangmanGame() {
         }
         onModeChange={handleModeChange}
         playMode={playMode}
+        showModeControls={showModeControls}
       />
 
       {shouldShowPlaySurface ? (
@@ -569,10 +585,12 @@ function HangmanHeader({
   actions,
   onModeChange,
   playMode,
+  showModeControls = true,
 }: {
   actions?: ReactNode;
   onModeChange: (mode: HangmanPlayMode) => void;
   playMode: HangmanPlayMode;
+  showModeControls?: boolean;
 }) {
   return (
     <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -589,25 +607,27 @@ function HangmanHeader({
       </div>
 
       <div className="grid gap-2 sm:justify-items-end">
-        <div className="grid w-full grid-cols-2 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
-          {MODE_OPTIONS.map(({ mode, label, icon: Icon }) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={playMode === mode}
-              onClick={() => onModeChange(mode)}
-              className={cn(
-                "flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
-                playMode === mode
-                  ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white",
-              )}
-            >
-              <Icon aria-hidden="true" className="size-4 shrink-0" />
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
+        {showModeControls ? (
+          <div className="grid w-full grid-cols-2 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
+            {MODE_OPTIONS.map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={playMode === mode}
+                onClick={() => onModeChange(mode)}
+                className={cn(
+                  "flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
+                  playMode === mode
+                    ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         {actions}
       </div>
     </header>
@@ -623,6 +643,7 @@ function HangmanLobbySetup({
   onJoinLobby,
   onPlayerNameChange,
   playerName,
+  showJoinForm,
 }: {
   error: string;
   isBusy: boolean;
@@ -632,9 +653,15 @@ function HangmanLobbySetup({
   onJoinLobby: (event: FormEvent<HTMLFormElement>) => void;
   onPlayerNameChange: (value: string) => void;
   playerName: string;
+  showJoinForm: boolean;
 }) {
   return (
-    <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+    <section
+      className={cn(
+        "grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4",
+        showJoinForm && "lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]",
+      )}
+    >
       <div className="grid content-start gap-4">
         <label className="grid gap-2 text-sm font-bold text-slate-200">
           Player Name
@@ -658,29 +685,31 @@ function HangmanLobbySetup({
         </button>
       </div>
 
-      <form onSubmit={onJoinLobby} className="grid content-start gap-4">
-        <label className="grid gap-2 text-sm font-bold text-slate-200">
-          Lobby Code
-          <input
-            aria-label="Hangman lobby code"
-            value={joinCode}
-            onChange={(event) => onJoinCodeChange(event.target.value)}
-            className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
-            inputMode="text"
-            maxLength={6}
-            placeholder="ABC123"
-          />
-        </label>
+      {showJoinForm ? (
+        <form onSubmit={onJoinLobby} className="grid content-start gap-4">
+          <label className="grid gap-2 text-sm font-bold text-slate-200">
+            Lobby Code
+            <input
+              aria-label="Hangman lobby code"
+              value={joinCode}
+              onChange={(event) => onJoinCodeChange(event.target.value)}
+              className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
+              inputMode="text"
+              maxLength={6}
+              placeholder="ABC123"
+            />
+          </label>
 
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
-        >
-          <LogIn aria-hidden="true" className="size-4" />
-          Join Lobby
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
+          >
+            <LogIn aria-hidden="true" className="size-4" />
+            Join Lobby
+          </button>
+        </form>
+      ) : null}
 
       {error ? (
         <p

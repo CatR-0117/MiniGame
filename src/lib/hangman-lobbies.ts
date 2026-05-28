@@ -13,11 +13,14 @@ import {
 } from "@/lib/hangman";
 import {
   cleanupExpiredLobbies,
-  generateUniqueLobbyCode,
   lobbyError,
   normalizeLobbyCode,
   type LobbyResult,
 } from "@/lib/lobby-utils";
+import {
+  generateUniqueArcadeLobbyCode,
+  registerArcadeLobbyCode,
+} from "@/lib/arcade-lobby-directory";
 
 const globalForHangman = globalThis as typeof globalThis & {
   __miniArcadeHangmanLobbies?: Map<string, HangmanLobby>;
@@ -31,11 +34,12 @@ export function createHangmanLobbyForPlayer(playerName: string): {
   const now = Date.now();
   cleanupExpiredLobbies(lobbies, now);
 
-  const code = generateUniqueLobbyCode(lobbies);
+  const code = generateUniqueArcadeLobbyCode();
   const privateLobby = createHangmanLobby(code, playerName, now);
   const lobby = getHangmanLobbyView(privateLobby, "player-1");
 
   lobbies.set(code, privateLobby);
+  registerArcadeLobbyCode(code, "hangman");
 
   if (!lobby) {
     throw new Error("Failed to create lobby.");

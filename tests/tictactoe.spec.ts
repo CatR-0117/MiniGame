@@ -10,7 +10,9 @@ import {
 test("solo mode lets the player move and the bot answer", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Choose a Game" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Choose How to Play" }),
+  ).toBeVisible();
   await page.getByLabel("Row 1, column 1, empty").click();
 
   await expect(page.getByLabel("Row 1, column 1, marked X")).toBeVisible();
@@ -23,9 +25,9 @@ test("two-player mode removes a player's oldest fourth active mark", async ({
 }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Same Device" }).click();
+  await page.getByRole("button", { name: /One Device/ }).click();
   await expect(
-    page.getByRole("button", { name: "Same Device" }),
+    page.getByRole("button", { name: /One Device/ }),
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.getByLabel("Row 1, column 1, empty").click();
@@ -48,7 +50,7 @@ test("tic-tac-toe lobby can be created, joined, and synced", async ({
   context,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Lobby", exact: true }).click();
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
   await page.getByRole("button", { name: "Create Lobby" }).click();
 
   const creatorLobbyCode = page.locator(
@@ -58,17 +60,21 @@ test("tic-tac-toe lobby can be created, joined, and synced", async ({
   const code = (await creatorLobbyCode.textContent())?.trim();
 
   expect(code).toBeTruthy();
+  await expect(page.getByText("Ready to play")).toBeVisible();
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Waiting for Player O")).toBeVisible();
 
   const joiner = await context.newPage();
   await joiner.goto("/");
-  await joiner.getByRole("button", { name: "Lobby", exact: true }).click();
-  await joiner.getByLabel("Tic-Tac-Toe lobby code").fill(code!);
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
   await joiner.getByRole("button", { name: "Join Lobby" }).click();
 
   await expect(
     joiner.locator('output[aria-label="Tic-Tac-Toe lobby code"]'),
   ).toHaveText(code!);
+  await expect(joiner.getByText("Ready to play")).toBeVisible();
+  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Your turn")).toBeVisible();
   await expect(joiner.getByText("Player's turn")).toBeVisible();
 
@@ -89,8 +95,8 @@ test("memory card lobby can be created, joined, and synced", async ({
   context,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
   await page.getByRole("button", { name: /Memory Cards/ }).click();
-  await page.getByRole("button", { name: "Lobby", exact: true }).click();
   await page.getByRole("button", { name: "Create Lobby" }).click();
 
   const creatorLobbyCode = page.locator('output[aria-label="Lobby code"]');
@@ -98,18 +104,21 @@ test("memory card lobby can be created, joined, and synced", async ({
   const code = (await creatorLobbyCode.textContent())?.trim();
 
   expect(code).toBeTruthy();
+  await expect(page.getByText("Ready to play")).toBeVisible();
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Waiting for Player 2")).toBeVisible();
 
   const joiner = await context.newPage();
   await joiner.goto("/");
-  await joiner.getByRole("button", { name: /Memory Cards/ }).click();
-  await joiner.getByRole("button", { name: "Lobby", exact: true }).click();
-  await joiner.getByLabel("Lobby code").fill(code!);
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
   await joiner.getByRole("button", { name: "Join Lobby" }).click();
 
   await expect(joiner.locator('output[aria-label="Lobby code"]')).toHaveText(
     code!,
   );
+  await expect(joiner.getByText("Ready to play")).toBeVisible();
+  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
   await expect(page.getByText("Your turn")).toBeVisible();
   await expect(joiner.getByText("Player's turn")).toBeVisible();
 
@@ -132,7 +141,7 @@ test("memory cards solo mode lets one player flip cards", async ({ page }) => {
   await page.getByRole("button", { name: /Memory Cards/ }).click();
 
   await expect(
-    page.getByRole("button", { name: "Solo", exact: true }),
+    page.getByRole("button", { name: /Singleplayer/ }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Find a pair")).toBeVisible();
   await expect(page.locator('button[aria-label^="Hidden memory card"]')).toHaveCount(
@@ -154,7 +163,7 @@ test("memory cards solo mode lets one player flip cards", async ({ page }) => {
 test("hangman is playable on a phone-sized viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Hangman", exact: true }).click();
+  await page.getByRole("button", { name: /Hangman/ }).click();
 
   await expect(page.getByRole("heading", { name: "Hangman" })).toBeVisible();
   await expect(page.getByLabel("Hangman letter keyboard")).toBeVisible();
@@ -172,13 +181,36 @@ test("hangman is playable on a phone-sized viewport", async ({ page }) => {
   await expect(letterA).toBeDisabled();
 });
 
+test("shared multiplayer lobby join is usable on a phone-sized viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+
+  const lobbyCode = page.getByLabel("Arcade lobby code");
+
+  await expect(lobbyCode).toBeVisible();
+  await lobbyCode.fill("ab-c12 3");
+  await expect(lobbyCode).toHaveValue("ABC123");
+  await expect(page.getByRole("button", { name: "Join Lobby" })).toBeVisible();
+
+  const hasNoHorizontalOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth <=
+      document.documentElement.clientWidth,
+  );
+
+  expect(hasNoHorizontalOverflow).toBe(true);
+});
+
 test("hangman lobby waits for both players to ready before starting", async ({
   page,
   context,
 }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
   await page.getByRole("button", { name: /Hangman/ }).click();
-  await page.getByRole("button", { name: "Lobby", exact: true }).click();
   await page.getByRole("button", { name: "Create Lobby" }).click();
 
   const creatorLobbyCode = page.locator(
@@ -193,9 +225,8 @@ test("hangman lobby waits for both players to ready before starting", async ({
 
   const joiner = await context.newPage();
   await joiner.goto("/");
-  await joiner.getByRole("button", { name: /Hangman/ }).click();
-  await joiner.getByRole("button", { name: "Lobby", exact: true }).click();
-  await joiner.getByLabel("Hangman lobby code").fill(code!);
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
   await joiner.getByRole("button", { name: "Join Lobby" }).click();
 
   await expect(

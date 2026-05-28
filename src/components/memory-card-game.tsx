@@ -14,6 +14,7 @@ import {
   LogOut,
   Plus,
   RefreshCw,
+  Sparkles,
   Star,
   Trophy,
   Users,
@@ -125,8 +126,16 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-export function MemoryCardGame() {
-  const [playMode, setPlayMode] = useState<MemoryPlayMode>("solo");
+export function MemoryCardGame({
+  initialPlayMode = "solo",
+  showLobbyJoinForm = true,
+  showModeControls = true,
+}: {
+  initialPlayMode?: MemoryPlayMode;
+  showLobbyJoinForm?: boolean;
+  showModeControls?: boolean;
+}) {
+  const [playMode, setPlayMode] = useState<MemoryPlayMode>(initialPlayMode);
   const [soloGame, setSoloGame] = useState<MemorySoloGame>(() =>
     createMemorySoloGame(),
   );
@@ -137,7 +146,7 @@ export function MemoryCardGame() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingCardId, setPendingCardId] = useState<string | null>(null);
-  const [isRestoring, setIsRestoring] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(initialPlayMode === "lobby");
   const [hasCopiedCode, setHasCopiedCode] = useState(false);
 
   const refreshLobby = useCallback(async (code: string) => {
@@ -149,6 +158,10 @@ export function MemoryCardGame() {
   }, []);
 
   useEffect(() => {
+    if (initialPlayMode !== "lobby") {
+      return;
+    }
+
     const savedSession = readSavedSession();
     let isActive = true;
 
@@ -184,7 +197,7 @@ export function MemoryCardGame() {
       isActive = false;
       window.clearTimeout(restoreTimeoutId);
     };
-  }, [refreshLobby]);
+  }, [initialPlayMode, refreshLobby]);
 
   useEffect(() => {
     if (!lobby?.code || playMode !== "lobby") {
@@ -366,6 +379,28 @@ export function MemoryCardGame() {
     }
   }
 
+  async function handleReadyLobby() {
+    if (!lobby || !playerId) {
+      return;
+    }
+
+    setIsBusy(true);
+    setError("");
+
+    try {
+      const response = await postJson<LobbyResponse>(
+        `/api/memory/lobbies/${encodeURIComponent(lobby.code)}/ready`,
+        { playerId },
+      );
+
+      setLobby(response.lobby);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   async function handleCopyLobbyCode() {
     if (!lobby) {
       return;
@@ -388,6 +423,7 @@ export function MemoryCardGame() {
     return (
       <section aria-labelledby="memory-title" className="grid gap-4 sm:gap-5">
         <MemoryHeader
+          showModeControls={showModeControls}
           onModeChange={handleModeChange}
           playMode={playMode}
         />
@@ -428,11 +464,18 @@ export function MemoryCardGame() {
     return (
       <section aria-labelledby="memory-title" className="grid gap-4 sm:gap-5">
         <MemoryHeader
+          showModeControls={showModeControls}
           onModeChange={handleModeChange}
           playMode={playMode}
         />
 
-        <section className="grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+        <section
+          className={cn(
+            "grid gap-4 rounded-lg border border-white/10 bg-slate-950/70 p-3 shadow-2xl shadow-black/25 sm:p-4",
+            showLobbyJoinForm &&
+              "lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]",
+          )}
+        >
           <div className="grid content-start gap-4">
             <label className="grid gap-2 text-sm font-bold text-slate-200">
               Player Name
@@ -456,31 +499,33 @@ export function MemoryCardGame() {
             </button>
           </div>
 
-          <form onSubmit={handleJoinLobby} className="grid content-start gap-4">
-            <label className="grid gap-2 text-sm font-bold text-slate-200">
-              Lobby Code
-              <input
-                aria-label="Lobby code"
-                value={joinCode}
-                onChange={(event) =>
-                  setJoinCode(cleanLobbyCode(event.target.value))
-                }
-                className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
-                inputMode="text"
-                maxLength={6}
-                placeholder="ABC123"
-              />
-            </label>
+          {showLobbyJoinForm ? (
+            <form onSubmit={handleJoinLobby} className="grid content-start gap-4">
+              <label className="grid gap-2 text-sm font-bold text-slate-200">
+                Lobby Code
+                <input
+                  aria-label="Lobby code"
+                  value={joinCode}
+                  onChange={(event) =>
+                    setJoinCode(cleanLobbyCode(event.target.value))
+                  }
+                  className="min-h-12 rounded-lg border border-white/10 bg-white/[0.07] px-3 text-base font-black uppercase tracking-[0.2em] text-white outline-none transition placeholder:tracking-normal placeholder:text-slate-500 focus:border-teal-200/80"
+                  inputMode="text"
+                  maxLength={6}
+                  placeholder="ABC123"
+                />
+              </label>
 
-            <button
-              type="submit"
-              disabled={isBusy || isRestoring}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
-            >
-              <LogIn aria-hidden="true" className="size-4" />
-              Join Lobby
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={isBusy || isRestoring}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.07] px-4 text-sm font-black text-slate-100 transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-70"
+              >
+                <LogIn aria-hidden="true" className="size-4" />
+                Join Lobby
+              </button>
+            </form>
+          ) : null}
         </section>
 
         {error ? (
@@ -519,6 +564,7 @@ export function MemoryCardGame() {
             </button>
           </div>
         }
+        showModeControls={showModeControls}
         onModeChange={handleModeChange}
         playMode={playMode}
       />
@@ -607,8 +653,11 @@ export function MemoryCardGame() {
               <PlayerScorePanel
                 key={player.id}
                 player={player}
-                isCurrent={player.id === lobby.currentPlayerId}
+                isCurrent={
+                  lobby.status === "playing" && player.id === lobby.currentPlayerId
+                }
                 isLocal={player.id === localPlayer?.id}
+                status={lobby.status}
               />
             ))}
             {lobby.players.length < 2 ? <WaitingPlayerPanel /> : null}
@@ -625,6 +674,18 @@ export function MemoryCardGame() {
               {getResultText(lobby)}
             </p>
           </div>
+
+          {lobby.status === "waiting" || lobby.status === "readying" ? (
+            <button
+              type="button"
+              onClick={handleReadyLobby}
+              disabled={isBusy || !playerId || Boolean(localPlayer?.isReady)}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-teal-300 px-4 text-sm font-black text-slate-950 transition hover:bg-teal-200 disabled:cursor-default disabled:opacity-70"
+            >
+              <Sparkles aria-hidden="true" className="size-4" />
+              {localPlayer?.isReady ? "Ready" : "Ready"}
+            </button>
+          ) : null}
         </aside>
       </section>
 
@@ -644,10 +705,12 @@ function MemoryHeader({
   actions,
   onModeChange,
   playMode,
+  showModeControls = true,
 }: {
   actions?: ReactNode;
   onModeChange: (mode: MemoryPlayMode) => void;
   playMode: MemoryPlayMode;
+  showModeControls?: boolean;
 }) {
   return (
     <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -661,25 +724,27 @@ function MemoryHeader({
       </div>
 
       <div className="grid gap-2 sm:justify-items-end">
-        <div className="grid w-full grid-cols-2 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
-          {MODE_OPTIONS.map(({ mode, label, icon: Icon }) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={playMode === mode}
-              onClick={() => onModeChange(mode)}
-              className={cn(
-                "flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
-                playMode === mode
-                  ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white",
-              )}
-            >
-              <Icon aria-hidden="true" className="size-4 shrink-0" />
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
+        {showModeControls ? (
+          <div className="grid w-full grid-cols-2 rounded-lg border border-white/10 bg-white/5 p-1 sm:w-auto">
+            {MODE_OPTIONS.map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={playMode === mode}
+                onClick={() => onModeChange(mode)}
+                className={cn(
+                  "flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-bold transition sm:px-4",
+                  playMode === mode
+                    ? "bg-teal-300 text-slate-950 shadow-lg shadow-teal-950/40"
+                    : "text-slate-300 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         {actions}
       </div>
     </header>
@@ -853,10 +918,12 @@ function PlayerScorePanel({
   player,
   isCurrent,
   isLocal,
+  status,
 }: {
   player: MemoryPlayer;
   isCurrent: boolean;
   isLocal: boolean;
+  status: MemoryLobby["status"];
 }) {
   return (
     <div
@@ -874,7 +941,7 @@ function PlayerScorePanel({
             {player.name}
           </p>
           <p className="mt-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-            {isLocal ? "You" : isCurrent ? "Turn" : "Ready"}
+            {getPlayerStateText(player, isLocal, isCurrent, status)}
           </p>
         </div>
         <span className="text-4xl font-black text-teal-100">{player.score}</span>
@@ -894,6 +961,27 @@ function WaitingPlayerPanel() {
       </p>
     </div>
   );
+}
+
+function getPlayerStateText(
+  player: MemoryPlayer,
+  isLocal: boolean,
+  isCurrent: boolean,
+  status: MemoryLobby["status"],
+): string {
+  if (isCurrent) {
+    return "Turn";
+  }
+
+  if (status === "playing" || status === "settling") {
+    return isLocal ? "You" : "Ready";
+  }
+
+  if (player.isReady) {
+    return isLocal ? "You" : "Ready";
+  }
+
+  return "Not Ready";
 }
 
 function rememberSession(code: string, playerId: MemoryPlayerId) {
@@ -948,7 +1036,15 @@ function getStatusText(
   }
 
   if (lobby.status === "waiting") {
-    return "Waiting for Player 2";
+    const localPlayer = lobby.players.find((player) => player.id === playerId);
+
+    return localPlayer?.isReady ? "Waiting for Player 2" : "Ready to play";
+  }
+
+  if (lobby.status === "readying") {
+    const localPlayer = lobby.players.find((player) => player.id === playerId);
+
+    return localPlayer?.isReady ? "Waiting for opponent" : "Ready to play";
   }
 
   if (lobby.status === "settling") {
