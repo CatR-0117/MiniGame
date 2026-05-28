@@ -46,13 +46,16 @@ import {
   deleteJson,
   getErrorMessage,
   getJson,
+  isAbortError,
   postJson,
 } from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
+  readArcadeLobbyGame,
   readLobbySession,
   rememberLobbySession,
+  type ArcadeLobbyGame,
   type StoredLobbySession,
 } from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
@@ -129,6 +132,7 @@ const CARD_FACES: Record<MemoryCardValue, CardFace> = {
 };
 
 const SESSION_STORAGE_KEY = "mini-arcade-memory-session";
+const LOBBY_POLL_MS = 700;
 
 const MODE_OPTIONS: Array<{
   mode: MemoryPlayMode;
@@ -146,6 +150,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 export function MemoryCardGame({
   autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyGameChange,
   onLobbyLeave,
   onLobbySessionChange,
   playerName: externalPlayerName,
@@ -155,6 +160,7 @@ export function MemoryCardGame({
 }: {
   autoJoinCode?: string | null;
   initialPlayMode?: MemoryPlayMode;
+  onLobbyGameChange?: (game: ArcadeLobbyGame) => void;
   onLobbyLeave?: () => void;
   onLobbySessionChange?: (session: {
     code: string;
@@ -294,36 +300,85 @@ export function MemoryCardGame({
       return;
     }
 
+    const lobbyCode = lobby.code;
     let isActive = true;
+    let timeoutId: number | null = null;
+    let activeRequest: AbortController | null = null;
+
+    const closeUnavailableLobby = () => {
+      forgetLobbySession(SESSION_STORAGE_KEY);
+      setLobby(null);
+      setPlayerId(null);
+      setJoinCode("");
+      setError("Lobby is no longer available.");
+      onLobbyLeave?.();
+    };
+
+    const scheduleNextPoll = () => {
+      timeoutId = window.setTimeout(pollLobby, LOBBY_POLL_MS);
+    };
 
     const pollLobby = async () => {
+      const request = new AbortController();
+      activeRequest = request;
+
       try {
         const response = await getJson<LobbyResponse>(
-          `/api/memory/lobbies/${encodeURIComponent(lobby.code)}`,
+          `/api/memory/lobbies/${encodeURIComponent(lobbyCode)}`,
+          { signal: request.signal },
         );
 
         if (isActive) {
           setLobby(response.lobby);
         }
-      } catch {
+      } catch (pollError) {
+        if (!isActive || isAbortError(pollError)) {
+          return;
+        }
+
+        try {
+          const activeGame = await readArcadeLobbyGame(
+            lobbyCode,
+            request.signal,
+          );
+
+          if (!isActive) {
+            return;
+          }
+
+          if (activeGame !== "memory") {
+            onLobbyGameChange?.(activeGame);
+            return;
+          }
+
+          closeUnavailableLobby();
+        } catch (statusError) {
+          if (!isActive || isAbortError(statusError)) {
+            return;
+          }
+
+          closeUnavailableLobby();
+        }
+      } finally {
+        activeRequest = null;
+
         if (isActive) {
-          forgetLobbySession(SESSION_STORAGE_KEY);
-          setLobby(null);
-          setPlayerId(null);
-          setJoinCode("");
-          setError("Lobby is no longer available.");
-          onLobbyLeave?.();
+          scheduleNextPoll();
         }
       }
     };
 
-    const intervalId = window.setInterval(pollLobby, 900);
+    void pollLobby();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
+      activeRequest?.abort();
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [lobby?.code, onLobbyLeave, playMode]);
+  }, [lobby?.code, onLobbyGameChange, onLobbyLeave, playMode]);
 
   useEffect(() => {
     if (soloGame.status !== "settling" || soloGame.pendingHideAt === null) {

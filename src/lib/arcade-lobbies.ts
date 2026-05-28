@@ -1,7 +1,6 @@
 import type { HangmanLobbyView, HangmanPlayerId } from "@/lib/hangman";
 import {
   createHangmanLobbyForHostCode,
-  deleteHangmanLobbyByCode,
   hasHangmanLobbyByCode,
   isHangmanLobbyHost,
   joinHangmanLobbyByCode,
@@ -9,14 +8,12 @@ import {
 import type { MemoryLobby, MemoryPlayerId } from "@/lib/memory";
 import {
   createLobbyForHostCode as createMemoryLobbyForHostCode,
-  deleteLobbyByCode as deleteMemoryLobbyByCode,
   hasMemoryLobbyByCode,
   isMemoryLobbyHost,
   joinLobbyByCode as joinMemoryLobbyByCode,
 } from "@/lib/memory-lobbies";
 import {
   createTicTacToeLobbyForHostCode,
-  deleteTicTacToeLobbyByCode,
   hasTicTacToeLobbyByCode,
   isTicTacToeLobbyHost,
   joinTicTacToeLobbyByCode,
@@ -126,10 +123,6 @@ export async function switchArcadeLobbyGame(
     return lobbyError(403, "Only the lobby host can change games.");
   }
 
-  if (currentGame !== nextGame) {
-    await deleteKnownArcadeLobby(currentGame, code);
-  }
-
   const result = await createKnownArcadeLobby(
     nextGame,
     code,
@@ -218,23 +211,6 @@ async function createKnownArcadeLobby(
   }
 
   return createHangmanLobbyForHostCode(code, playerName, rejoinToken);
-}
-
-async function deleteKnownArcadeLobby(
-  game: ArcadeLobbyGame,
-  code: string,
-): Promise<void> {
-  if (game === "tic-tac-toe") {
-    await deleteTicTacToeLobbyByCode(code);
-    return;
-  }
-
-  if (game === "memory") {
-    await deleteMemoryLobbyByCode(code);
-    return;
-  }
-
-  await deleteHangmanLobbyByCode(code);
 }
 
 async function hasKnownArcadeLobby(

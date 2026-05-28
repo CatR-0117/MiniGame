@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Bot, Grid3X3, Keyboard, Layers, LogIn, Users } from "lucide-react";
 import { HangmanGame } from "@/components/hangman-game";
 import { MemoryCardGame } from "@/components/memory-card-game";
 import { TicTacToeGame } from "@/components/tic-tac-toe-game";
-import { getErrorMessage, getJson, postJson } from "@/lib/http-client";
-import { createRejoinToken, rememberLobbySession } from "@/lib/lobby-client";
+import { getErrorMessage, isAbortError, postJson } from "@/lib/http-client";
+import {
+  createRejoinToken,
+  readArcadeLobbyGame,
+  rememberLobbySession,
+} from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
 
 type ArcadeGame = "tic-tac-toe" | "memory" | "hangman";
@@ -18,9 +22,6 @@ type ArcadeJoinResponse = {
   lobby: {
     code: string;
   };
-};
-type ArcadeLobbyStatusResponse = {
-  game: ArcadeGame;
 };
 type ActiveLobbySession = {
   code: string;
@@ -96,6 +97,8 @@ const GAME_OPTIONS: Array<{
   },
 ];
 
+const LOBBY_STATUS_POLL_MS = 700;
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -113,6 +116,7 @@ export default function Home() {
   const [joinToken, setJoinToken] = useState(0);
   const [activeLobbySession, setActiveLobbySession] =
     useState<ActiveLobbySession | null>(null);
+  const syncedLobbyGameRef = useRef<ArcadeGame>(selectedGame);
   const handleLobbySessionChange = useCallback(
     (session: ActiveLobbySession) => {
       setActiveLobbySession((currentSession) => {
@@ -134,12 +138,34 @@ export default function Home() {
   const handleLobbyLeave = useCallback(() => {
     setActiveLobbySession(null);
   }, []);
+  const handleLobbyGameChange = useCallback((game: ArcadeGame) => {
+    if (syncedLobbyGameRef.current === game) {
+      return;
+    }
+
+    syncedLobbyGameRef.current = game;
+    setSelectedGame(game);
+    setActiveLobbySession((currentSession) =>
+      currentSession
+        ? {
+            ...currentSession,
+            game,
+          }
+        : currentSession,
+    );
+    setJoinToken((currentToken) => currentToken + 1);
+  }, []);
+
+  useEffect(() => {
+    syncedLobbyGameRef.current = activeLobbySession?.game ?? selectedGame;
+  }, [activeLobbySession?.game, selectedGame]);
   const availableGames = GAME_OPTIONS.filter((game) =>
     game.modes.includes(selectedPlayMode),
   );
   const activeGame = availableGames.some((game) => game.id === selectedGame)
     ? selectedGame
     : availableGames[0].id;
+  const activeLobbyCode = activeLobbySession?.code ?? null;
 
   function handlePlayModeChange(nextMode: ArcadePlayMode) {
     const nextGames = GAME_OPTIONS.filter((game) =>
@@ -157,46 +183,67 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (selectedPlayMode !== "multiplayer" || !activeLobbySession) {
+    if (selectedPlayMode !== "multiplayer" || !activeLobbyCode) {
       return;
     }
 
+    const lobbyCode = activeLobbyCode;
     let isActive = true;
+    let timeoutId: number | null = null;
+    let activeRequest: AbortController | null = null;
+
+    const scheduleNextPoll = () => {
+      timeoutId = window.setTimeout(pollLobbyGame, LOBBY_STATUS_POLL_MS);
+    };
 
     const pollLobbyGame = async () => {
+      const request = new AbortController();
+      activeRequest = request;
+
       try {
-        const response = await getJson<ArcadeLobbyStatusResponse>(
-          `/api/lobbies/${encodeURIComponent(activeLobbySession.code)}`,
+        const game = await readArcadeLobbyGame(
+          lobbyCode,
+          request.signal,
         );
 
-        if (!isActive || response.game === selectedGame) {
+        if (!isActive || game === selectedGame) {
           return;
         }
 
-        setSelectedGame(response.game);
-        setActiveLobbySession((currentSession) =>
-          currentSession
-            ? {
-                ...currentSession,
-                game: response.game,
-              }
-            : currentSession,
-        );
-        setJoinToken((currentToken) => currentToken + 1);
-      } catch {
+        handleLobbyGameChange(game);
+      } catch (pollError) {
+        if (!isActive || isAbortError(pollError)) {
+          return;
+        }
+
         if (isActive) {
           setActiveLobbySession(null);
+        }
+      } finally {
+        activeRequest = null;
+
+        if (isActive) {
+          scheduleNextPoll();
         }
       }
     };
 
-    const intervalId = window.setInterval(pollLobbyGame, 900);
+    void pollLobbyGame();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
+      activeRequest?.abort();
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [activeLobbySession, selectedGame, selectedPlayMode]);
+  }, [
+    activeLobbyCode,
+    handleLobbyGameChange,
+    selectedGame,
+    selectedPlayMode,
+  ]);
 
   async function handleGameChange(nextGame: ArcadeGame) {
     if (
@@ -232,6 +279,7 @@ export default function Home() {
         response.playerId,
         activeLobbySession.rejoinToken,
       );
+      syncedLobbyGameRef.current = response.game;
       setActiveLobbySession({
         code: response.lobby.code,
         game: response.game,
@@ -452,6 +500,7 @@ export default function Home() {
                     : "solo"
               }
               onLobbyLeave={handleLobbyLeave}
+              onLobbyGameChange={handleLobbyGameChange}
               onLobbySessionChange={handleLobbySessionChange}
               playerName={playerName}
               rejoinToken={rejoinToken}
@@ -470,6 +519,7 @@ export default function Home() {
                 selectedPlayMode === "multiplayer" ? "lobby" : "solo"
               }
               onLobbyLeave={handleLobbyLeave}
+              onLobbyGameChange={handleLobbyGameChange}
               onLobbySessionChange={handleLobbySessionChange}
               playerName={playerName}
               rejoinToken={rejoinToken}
@@ -488,6 +538,7 @@ export default function Home() {
                 selectedPlayMode === "multiplayer" ? "lobby" : "solo"
               }
               onLobbyLeave={handleLobbyLeave}
+              onLobbyGameChange={handleLobbyGameChange}
               onLobbySessionChange={handleLobbySessionChange}
               playerName={playerName}
               rejoinToken={rejoinToken}

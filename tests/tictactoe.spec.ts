@@ -150,6 +150,7 @@ test("hangman lobby stays available while the waiting countdown is active", asyn
 
 test("host can switch lobby game after entering their name once", async ({
   page,
+  context,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Multiplayer/ }).click();
@@ -166,7 +167,19 @@ test("host can switch lobby game after entering their name once", async ({
   expect(code).toBeTruthy();
   await expect(page.getByLabel("Player Name")).toHaveCount(0);
 
-  const memoryJoinRequests: string[] = [];
+  const joiner = await context.newPage();
+
+  await joiner.goto("/");
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
+  await joiner.getByRole("button", { name: "Join Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Tic-Tac-Toe lobby code"]'),
+  ).toHaveText(code!);
+
+  const hostMemoryJoinRequests: string[] = [];
+  const guestMemoryJoinRequests: string[] = [];
 
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -175,7 +188,18 @@ test("host can switch lobby game after entering their name once", async ({
       request.method() === "POST" &&
       url.pathname === `/api/memory/lobbies/${code}/join`
     ) {
-      memoryJoinRequests.push(url.pathname);
+      hostMemoryJoinRequests.push(url.pathname);
+    }
+  });
+
+  joiner.on("request", (request) => {
+    const url = new URL(request.url());
+
+    if (
+      request.method() === "POST" &&
+      url.pathname === `/api/memory/lobbies/${code}/join`
+    ) {
+      guestMemoryJoinRequests.push(url.pathname);
     }
   });
 
@@ -186,9 +210,16 @@ test("host can switch lobby game after entering their name once", async ({
     code!,
   );
   await expect(page.getByText("Ada")).toBeVisible();
+  await expect(
+    joiner.getByRole("heading", { name: "Memory Cards" }),
+  ).toBeVisible();
+  await expect(joiner.locator('output[aria-label="Lobby code"]')).toHaveText(
+    code!,
+  );
 
   await page.waitForTimeout(1_200);
-  expect(memoryJoinRequests.length).toBeLessThanOrEqual(1);
+  expect(hostMemoryJoinRequests.length).toBeLessThanOrEqual(1);
+  expect(guestMemoryJoinRequests.length).toBeLessThanOrEqual(1);
 });
 
 test("returning tic-tac-toe player can reclaim a full lobby", async ({

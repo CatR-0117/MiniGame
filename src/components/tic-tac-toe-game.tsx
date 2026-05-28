@@ -36,13 +36,16 @@ import {
   deleteJson,
   getErrorMessage,
   getJson,
+  isAbortError,
   postJson,
 } from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
+  readArcadeLobbyGame,
   readLobbySession,
   rememberLobbySession,
+  type ArcadeLobbyGame,
   type StoredLobbySession,
 } from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
@@ -98,6 +101,7 @@ const MODE_OPTIONS: Array<{
 ];
 
 const SESSION_STORAGE_KEY = "mini-arcade-tic-tac-toe-session";
+const LOBBY_POLL_MS = 700;
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -106,6 +110,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 export function TicTacToeGame({
   autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyGameChange,
   onLobbyLeave,
   onLobbySessionChange,
   playerName: externalPlayerName,
@@ -115,6 +120,7 @@ export function TicTacToeGame({
 }: {
   autoJoinCode?: string | null;
   initialPlayMode?: TicTacToePlayMode;
+  onLobbyGameChange?: (game: ArcadeLobbyGame) => void;
   onLobbyLeave?: () => void;
   onLobbySessionChange?: (session: {
     code: string;
@@ -279,36 +285,85 @@ export function TicTacToeGame({
       return;
     }
 
+    const lobbyCode = lobby.code;
     let isActive = true;
+    let timeoutId: number | null = null;
+    let activeRequest: AbortController | null = null;
+
+    const closeUnavailableLobby = () => {
+      forgetLobbySession(SESSION_STORAGE_KEY);
+      setLobby(null);
+      setPlayerId(null);
+      setJoinCode("");
+      setError("Lobby is no longer available.");
+      onLobbyLeave?.();
+    };
+
+    const scheduleNextPoll = () => {
+      timeoutId = window.setTimeout(pollLobby, LOBBY_POLL_MS);
+    };
 
     const pollLobby = async () => {
+      const request = new AbortController();
+      activeRequest = request;
+
       try {
         const response = await getJson<LobbyResponse>(
-          `/api/tic-tac-toe/lobbies/${encodeURIComponent(lobby.code)}`,
+          `/api/tic-tac-toe/lobbies/${encodeURIComponent(lobbyCode)}`,
+          { signal: request.signal },
         );
 
         if (isActive) {
           setLobby(response.lobby);
         }
-      } catch {
+      } catch (pollError) {
+        if (!isActive || isAbortError(pollError)) {
+          return;
+        }
+
+        try {
+          const activeGame = await readArcadeLobbyGame(
+            lobbyCode,
+            request.signal,
+          );
+
+          if (!isActive) {
+            return;
+          }
+
+          if (activeGame !== "tic-tac-toe") {
+            onLobbyGameChange?.(activeGame);
+            return;
+          }
+
+          closeUnavailableLobby();
+        } catch (statusError) {
+          if (!isActive || isAbortError(statusError)) {
+            return;
+          }
+
+          closeUnavailableLobby();
+        }
+      } finally {
+        activeRequest = null;
+
         if (isActive) {
-          forgetLobbySession(SESSION_STORAGE_KEY);
-          setLobby(null);
-          setPlayerId(null);
-          setJoinCode("");
-          setError("Lobby is no longer available.");
-          onLobbyLeave?.();
+          scheduleNextPoll();
         }
       }
     };
 
-    const intervalId = window.setInterval(pollLobby, 900);
+    void pollLobby();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
+      activeRequest?.abort();
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [lobby?.code, onLobbyLeave, playMode]);
+  }, [lobby?.code, onLobbyGameChange, onLobbyLeave, playMode]);
 
   const localStatusText = useMemo(() => {
     if (round.winner) {

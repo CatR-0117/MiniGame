@@ -30,13 +30,16 @@ import {
   deleteJson,
   getErrorMessage,
   getJson,
+  isAbortError,
   postJson,
 } from "@/lib/http-client";
 import {
   createRejoinToken,
   forgetLobbySession,
+  readArcadeLobbyGame,
   readLobbySession,
   rememberLobbySession,
+  type ArcadeLobbyGame,
   type StoredLobbySession,
 } from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
@@ -56,6 +59,7 @@ type LobbyWithPlayerResponse = LobbyResponse & {
 type SavedHangmanSession = StoredLobbySession<HangmanPlayerId>;
 
 const SESSION_STORAGE_KEY = "mini-arcade-hangman-session";
+const LOBBY_POLL_MS = 700;
 
 const MODE_OPTIONS: Array<{
   mode: HangmanPlayMode;
@@ -73,6 +77,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 export function HangmanGame({
   autoJoinCode = null,
   initialPlayMode = "solo",
+  onLobbyGameChange,
   onLobbyLeave,
   onLobbySessionChange,
   playerName: externalPlayerName,
@@ -82,6 +87,7 @@ export function HangmanGame({
 }: {
   autoJoinCode?: string | null;
   initialPlayMode?: HangmanPlayMode;
+  onLobbyGameChange?: (game: ArcadeLobbyGame) => void;
   onLobbyLeave?: () => void;
   onLobbySessionChange?: (session: {
     code: string;
@@ -249,36 +255,93 @@ export function HangmanGame({
       return;
     }
 
+    const lobbyCode = lobby.code;
+    const currentPlayerId = playerId;
     let isActive = true;
+    let timeoutId: number | null = null;
+    let activeRequest: AbortController | null = null;
+
+    const closeUnavailableLobby = () => {
+      forgetLobbySession(SESSION_STORAGE_KEY);
+      setLobby(null);
+      setPlayerId(null);
+      setJoinCode("");
+      setError("Lobby is no longer available.");
+      onLobbyLeave?.();
+    };
+
+    const scheduleNextPoll = () => {
+      timeoutId = window.setTimeout(pollLobby, LOBBY_POLL_MS);
+    };
 
     const pollLobby = async () => {
+      const request = new AbortController();
+      activeRequest = request;
+
       try {
         const response = await getJson<LobbyResponse>(
-          getLobbyUrl(lobby.code, playerId),
+          getLobbyUrl(lobbyCode, currentPlayerId),
+          { signal: request.signal },
         );
 
         if (isActive) {
           setLobby(response.lobby);
         }
-      } catch {
+      } catch (pollError) {
+        if (!isActive || isAbortError(pollError)) {
+          return;
+        }
+
+        try {
+          const activeGame = await readArcadeLobbyGame(
+            lobbyCode,
+            request.signal,
+          );
+
+          if (!isActive) {
+            return;
+          }
+
+          if (activeGame !== "hangman") {
+            onLobbyGameChange?.(activeGame);
+            return;
+          }
+
+          closeUnavailableLobby();
+        } catch (statusError) {
+          if (!isActive || isAbortError(statusError)) {
+            return;
+          }
+
+          closeUnavailableLobby();
+        }
+      } finally {
+        activeRequest = null;
+
         if (isActive) {
-          forgetLobbySession(SESSION_STORAGE_KEY);
-          setLobby(null);
-          setPlayerId(null);
-          setJoinCode("");
-          setError("Lobby is no longer available.");
-          onLobbyLeave?.();
+          scheduleNextPoll();
         }
       }
     };
 
-    const intervalId = window.setInterval(pollLobby, 850);
+    void pollLobby();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
+      activeRequest?.abort();
+
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
     };
-  }, [lobby?.code, onLobbyLeave, pendingLetter, playerId, playMode]);
+  }, [
+    lobby?.code,
+    onLobbyGameChange,
+    onLobbyLeave,
+    pendingLetter,
+    playerId,
+    playMode,
+  ]);
 
   const handleSoloGuess = useCallback(
     (letter: string) => {

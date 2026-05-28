@@ -1,7 +1,15 @@
+import { getJson } from "@/lib/http-client";
+
+export type ArcadeLobbyGame = "tic-tac-toe" | "memory" | "hangman";
+
 export type StoredLobbySession<TPlayerId extends string> = {
   code: string;
   playerId: TPlayerId;
   rejoinToken?: string;
+};
+
+type ArcadeLobbyStatusResponse = {
+  game: ArcadeLobbyGame;
 };
 
 export function createRejoinToken(): string {
@@ -73,6 +81,18 @@ export function readLobbySession<TPlayerId extends string>(
   }
 
   return null;
+}
+
+export async function readArcadeLobbyGame(
+  code: string,
+  signal?: AbortSignal,
+): Promise<ArcadeLobbyGame> {
+  const response = await getJson<ArcadeLobbyStatusResponse>(
+    `/api/lobbies/${encodeURIComponent(code)}`,
+    { signal },
+  );
+
+  return response.game;
 }
 
 function readStorage(storage: Storage, key: string): string | null {

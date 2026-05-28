@@ -1,5 +1,13 @@
-export async function getJson<T>(url: string): Promise<T> {
+type JsonRequestOptions = {
+  signal?: AbortSignal;
+};
+
+export async function getJson<T>(
+  url: string,
+  options: JsonRequestOptions = {},
+): Promise<T> {
   const response = await fetch(url, {
+    signal: options.signal,
     headers: {
       Accept: "application/json",
     },
@@ -42,6 +50,10 @@ export async function deleteJson<T>(
 
 export function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
