@@ -14,7 +14,7 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const { code } = await context.params;
   const body = await readJsonObject(request);
   const playerId = readStringField(body, "playerId");
-  const result = restartHangmanLobbyRound(code, playerId);
+  const result = await restartHangmanLobbyRound(code, playerId);
 
   if (!result.ok) {
     return NextResponse.json(

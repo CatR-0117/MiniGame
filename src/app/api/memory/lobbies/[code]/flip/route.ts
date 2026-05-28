@@ -15,7 +15,7 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const body = await readJsonObject(request);
   const playerId = readStringField(body, "playerId");
   const cardId = readStringField(body, "cardId");
-  const result = flipLobbyCard(code, playerId, cardId);
+  const result = await flipLobbyCard(code, playerId, cardId);
 
   if (!result.ok) {
     return NextResponse.json(

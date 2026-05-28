@@ -11,7 +11,7 @@ type LobbyRouteContext = {
 
 export async function GET(_request: Request, context: LobbyRouteContext) {
   const { code } = await context.params;
-  const result = getTicTacToeLobbyByCode(code);
+  const result = await getTicTacToeLobbyByCode(code);
 
   if (!result.ok) {
     return NextResponse.json(

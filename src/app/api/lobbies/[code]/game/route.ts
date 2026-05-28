@@ -16,7 +16,7 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const playerName = readStringField(body, "playerName");
   const rejoinToken = readStringField(body, "rejoinToken");
   const game = readStringField(body, "game");
-  const result = switchArcadeLobbyGame(code, playerName, rejoinToken, game);
+  const result = await switchArcadeLobbyGame(code, playerName, rejoinToken, game);
 
   if (!result.ok) {
     return NextResponse.json(

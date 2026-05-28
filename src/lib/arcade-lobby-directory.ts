@@ -1,8 +1,13 @@
 import {
-  generateUniqueLobbyCode,
+  generateLobbyCode,
   LOBBY_TTL_MS,
   normalizeLobbyCode,
 } from "@/lib/lobby-utils";
+import {
+  cleanupExpiredLobbyRecords,
+  getStoredLobbyGame,
+  hasStoredLobbyByCode,
+} from "@/lib/lobby-store";
 
 export type ArcadeLobbyGame = "tic-tac-toe" | "memory" | "hangman";
 
@@ -15,18 +20,22 @@ const globalForArcadeLobbies = globalThis as typeof globalThis & {
   __miniArcadeLobbyDirectory?: Map<string, ArcadeLobbyDirectoryEntry>;
 };
 
-export function generateUniqueArcadeLobbyCode(): string {
-  const directory = getLobbyDirectory();
+export async function generateUniqueArcadeLobbyCode(): Promise<string> {
+  await cleanupExpiredLobbyRecords();
 
-  cleanupExpiredArcadeLobbyCodes(directory);
+  let code = generateLobbyCode();
 
-  return generateUniqueLobbyCode(directory);
+  while (await hasStoredLobbyByCode(code)) {
+    code = generateLobbyCode();
+  }
+
+  return code;
 }
 
-export function registerArcadeLobbyCode(
+export async function registerArcadeLobbyCode(
   code: string,
   game: ArcadeLobbyGame,
-): void {
+): Promise<void> {
   const directory = getLobbyDirectory();
 
   cleanupExpiredArcadeLobbyCodes(directory);
@@ -36,7 +45,15 @@ export function registerArcadeLobbyCode(
   });
 }
 
-export function getArcadeLobbyGame(code: string): ArcadeLobbyGame | null {
+export async function getArcadeLobbyGame(
+  code: string,
+): Promise<ArcadeLobbyGame | null> {
+  const storedGame = await getStoredLobbyGame(code);
+
+  if (storedGame) {
+    return storedGame;
+  }
+
   const directory = getLobbyDirectory();
 
   cleanupExpiredArcadeLobbyCodes(directory);

@@ -13,7 +13,7 @@ export async function GET(request: Request, context: LobbyRouteContext) {
   const { code } = await context.params;
   const { searchParams } = new URL(request.url);
   const playerId = searchParams.get("playerId") ?? "";
-  const result = getHangmanLobbyByCode(code, playerId);
+  const result = await getHangmanLobbyByCode(code, playerId);
 
   if (!result.ok) {
     return NextResponse.json(

@@ -89,7 +89,7 @@ export function sanitizePlayerName(name: string, fallback: string): string {
   return trimmedName.slice(0, 24);
 }
 
-function generateLobbyCode(): string {
+export function generateLobbyCode(): string {
   return Array.from({ length: LOBBY_CODE_LENGTH }, () =>
     CODE_ALPHABET.charAt(Math.floor(Math.random() * CODE_ALPHABET.length)),
   ).join("");

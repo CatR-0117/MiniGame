@@ -15,7 +15,7 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const body = await readJsonObject(request);
   const playerId = readStringField(body, "playerId");
   const index = readNumberField(body, "index");
-  const result = placeTicTacToeLobbyMark(code, playerId, index);
+  const result = await placeTicTacToeLobbyMark(code, playerId, index);
 
   if (!result.ok) {
     return NextResponse.json(

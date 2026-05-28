@@ -10,7 +10,6 @@ import {
   type MemoryPlayerId,
 } from "@/lib/memory";
 import {
-  cleanupExpiredLobbies,
   lobbyError,
   normalizeLobbyCode,
   type LobbyResult,
@@ -20,31 +19,33 @@ import {
   generateUniqueArcadeLobbyCode,
   registerArcadeLobbyCode,
 } from "@/lib/arcade-lobby-directory";
+import {
+  cleanupExpiredLobbyRecords,
+  deleteStoredLobby,
+  getStoredLobby,
+  hasStoredLobbyByCode,
+  saveStoredLobby,
+} from "@/lib/lobby-store";
 
-const globalForMemory = globalThis as typeof globalThis & {
-  __miniArcadeMemoryLobbies?: Map<string, MemoryLobby>;
-};
-
-export function createLobbyForPlayer(
+export async function createLobbyForPlayer(
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: MemoryLobby;
   playerId: MemoryPlayerId;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
-  const code = generateUniqueArcadeLobbyCode();
+  const code = await generateUniqueArcadeLobbyCode();
   const lobby = createMemoryLobby(
     code,
     playerName,
     now,
     createRejoinTokenHash(rejoinToken) ?? undefined,
   );
-  lobbies.set(code, lobby);
-  registerArcadeLobbyCode(code, "memory");
+  await saveStoredLobby("memory", lobby);
+  await registerArcadeLobbyCode(code, "memory");
 
   return {
     lobby,
@@ -52,17 +53,16 @@ export function createLobbyForPlayer(
   };
 }
 
-export function createLobbyForHostCode(
+export async function createLobbyForHostCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: MemoryLobby;
   playerId: MemoryPlayerId;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = createMemoryLobby(
@@ -72,8 +72,8 @@ export function createLobbyForHostCode(
     createRejoinTokenHash(rejoinToken) ?? undefined,
   );
 
-  lobbies.set(normalizedCode, lobby);
-  registerArcadeLobbyCode(normalizedCode, "memory");
+  await saveStoredLobby("memory", lobby);
+  await registerArcadeLobbyCode(normalizedCode, "memory");
 
   return {
     lobby,
@@ -81,22 +81,18 @@ export function createLobbyForHostCode(
   };
 }
 
-export function getLobbyByCode(code: string): LobbyResult<{
+export async function getLobbyByCode(code: string): Promise<LobbyResult<{
   lobby: MemoryLobby;
-}> {
-  const lobbies = getLobbyStore();
-  const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
-
+}>> {
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<MemoryLobby>(normalizedCode, "memory");
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
   }
 
   const settledLobby = settleMemoryLobby(lobby);
-  lobbies.set(normalizedCode, settledLobby);
+  await saveStoredLobby("memory", settledLobby);
 
   return {
     ok: true,
@@ -106,20 +102,18 @@ export function getLobbyByCode(code: string): LobbyResult<{
   };
 }
 
-export function joinLobbyByCode(
+export async function joinLobbyByCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: MemoryLobby;
   playerId: MemoryPlayerId;
-}> {
-  const lobbies = getLobbyStore();
+}>> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
 
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<MemoryLobby>(normalizedCode, "memory");
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
@@ -136,7 +130,7 @@ export function joinLobbyByCode(
       updatedAt: now,
     };
 
-    lobbies.set(normalizedCode, nextLobby);
+    await saveStoredLobby("memory", nextLobby);
 
     return {
       ok: true,
@@ -158,7 +152,7 @@ export function joinLobbyByCode(
     return lobbyError(409, "Lobby is full.");
   }
 
-  lobbies.set(normalizedCode, nextLobby);
+  await saveStoredLobby("memory", nextLobby);
 
   return {
     ok: true,
@@ -169,14 +163,14 @@ export function joinLobbyByCode(
   };
 }
 
-export function flipLobbyCard(
+export async function flipLobbyCard(
   code: string,
   playerId: string,
   cardId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: MemoryLobby;
-}> {
-  const lobbyResult = getLobbyByCode(code);
+}>> {
+  const lobbyResult = await getLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -197,7 +191,7 @@ export function flipLobbyCard(
   }
 
   const nextLobby = flipMemoryCard(lobby, playerId, cardId);
-  getLobbyStore().set(lobby.code, nextLobby);
+  await saveStoredLobby("memory", nextLobby);
 
   return {
     ok: true,
@@ -207,13 +201,13 @@ export function flipLobbyCard(
   };
 }
 
-export function readyLobbyPlayer(
+export async function readyLobbyPlayer(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: MemoryLobby;
-}> {
-  const lobbyResult = getLobbyByCode(code);
+}>> {
+  const lobbyResult = await getLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -234,7 +228,7 @@ export function readyLobbyPlayer(
   }
 
   const nextLobby = readyMemoryPlayer(lobby, playerId);
-  getLobbyStore().set(lobby.code, nextLobby);
+  await saveStoredLobby("memory", nextLobby);
 
   return {
     ok: true,
@@ -244,13 +238,13 @@ export function readyLobbyPlayer(
   };
 }
 
-export function restartLobby(
+export async function restartLobby(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: MemoryLobby;
-}> {
-  const lobbyResult = getLobbyByCode(code);
+}>> {
+  const lobbyResult = await getLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -267,7 +261,7 @@ export function restartLobby(
   }
 
   const nextLobby = restartMemoryLobby(lobby);
-  getLobbyStore().set(lobby.code, nextLobby);
+  await saveStoredLobby("memory", nextLobby);
 
   return {
     ok: true,
@@ -277,22 +271,22 @@ export function restartLobby(
   };
 }
 
-export function deleteLobbyByCode(code: string): void {
-  getLobbyStore().delete(normalizeLobbyCode(code));
+export async function deleteLobbyByCode(code: string): Promise<void> {
+  await deleteStoredLobby(normalizeLobbyCode(code), "memory");
 }
 
-export function hasMemoryLobbyByCode(code: string): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  return lobbies.has(normalizeLobbyCode(code));
+export async function hasMemoryLobbyByCode(code: string): Promise<boolean> {
+  return hasStoredLobbyByCode(normalizeLobbyCode(code), "memory");
 }
 
-export function isMemoryLobbyHost(code: string, rejoinToken: string): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  const lobby = lobbies.get(normalizeLobbyCode(code));
+export async function isMemoryLobbyHost(
+  code: string,
+  rejoinToken: string,
+): Promise<boolean> {
+  const lobby = await getStoredLobby<MemoryLobby>(
+    normalizeLobbyCode(code),
+    "memory",
+  );
   const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
 
   return Boolean(
@@ -300,10 +294,4 @@ export function isMemoryLobbyHost(code: string, rejoinToken: string): boolean {
       rejoinTokenHash &&
       lobby.players[0].rejoinTokenHash === rejoinTokenHash,
   );
-}
-
-function getLobbyStore(): Map<string, MemoryLobby> {
-  globalForMemory.__miniArcadeMemoryLobbies ??= new Map();
-
-  return globalForMemory.__miniArcadeMemoryLobbies;
 }

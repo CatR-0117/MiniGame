@@ -11,7 +11,7 @@ type LobbyRouteContext = {
 
 export async function GET(_request: Request, context: LobbyRouteContext) {
   const { code } = await context.params;
-  const result = getLobbyByCode(code);
+  const result = await getLobbyByCode(code);
 
   if (!result.ok) {
     return NextResponse.json(

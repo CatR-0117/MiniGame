@@ -5,7 +5,6 @@ import {
   type Player,
 } from "@/lib/game";
 import {
-  cleanupExpiredLobbies,
   getWaitingLobbyExpiresAt,
   lobbyError,
   normalizeLobbyCode,
@@ -17,6 +16,13 @@ import {
   generateUniqueArcadeLobbyCode,
   registerArcadeLobbyCode,
 } from "@/lib/arcade-lobby-directory";
+import {
+  cleanupExpiredLobbyRecords,
+  deleteStoredLobby,
+  getStoredLobby,
+  hasStoredLobbyByCode,
+  saveStoredLobby,
+} from "@/lib/lobby-store";
 
 export type TicTacToeLobbyStatus =
   | "waiting"
@@ -41,25 +47,20 @@ export type TicTacToeLobby = {
   waitingExpiresAt: number | null;
 };
 
-const globalForTicTacToe = globalThis as typeof globalThis & {
-  __miniArcadeTicTacToeLobbies?: Map<string, TicTacToeLobby>;
-};
-
-export function createTicTacToeLobbyForPlayer(
+export async function createTicTacToeLobbyForPlayer(
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: TicTacToeLobby;
   playerId: Player;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
-  const code = generateUniqueArcadeLobbyCode();
+  const code = await generateUniqueArcadeLobbyCode();
   const lobby = createTicTacToeLobby(code, playerName, now, rejoinToken);
-  lobbies.set(code, lobby);
-  registerArcadeLobbyCode(code, "tic-tac-toe");
+  await saveStoredLobby("tic-tac-toe", lobby);
+  await registerArcadeLobbyCode(code, "tic-tac-toe");
 
   return {
     lobby,
@@ -67,17 +68,16 @@ export function createTicTacToeLobbyForPlayer(
   };
 }
 
-export function createTicTacToeLobbyForHostCode(
+export async function createTicTacToeLobbyForHostCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: TicTacToeLobby;
   playerId: Player;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
   const normalizedCode = normalizeLobbyCode(code);
   const lobby = createTicTacToeLobby(
@@ -87,8 +87,8 @@ export function createTicTacToeLobbyForHostCode(
     rejoinToken,
   );
 
-  lobbies.set(normalizedCode, lobby);
-  registerArcadeLobbyCode(normalizedCode, "tic-tac-toe");
+  await saveStoredLobby("tic-tac-toe", lobby);
+  await registerArcadeLobbyCode(normalizedCode, "tic-tac-toe");
 
   return {
     lobby,
@@ -96,15 +96,14 @@ export function createTicTacToeLobbyForHostCode(
   };
 }
 
-export function getTicTacToeLobbyByCode(code: string): LobbyResult<{
+export async function getTicTacToeLobbyByCode(code: string): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
-}> {
-  const lobbies = getLobbyStore();
-  const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
-
+}>> {
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<TicTacToeLobby>(
+    normalizedCode,
+    "tic-tac-toe",
+  );
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
@@ -118,20 +117,21 @@ export function getTicTacToeLobbyByCode(code: string): LobbyResult<{
   };
 }
 
-export function joinTicTacToeLobbyByCode(
+export async function joinTicTacToeLobbyByCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
   playerId: Player;
-}> {
-  const lobbies = getLobbyStore();
+}>> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
 
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<TicTacToeLobby>(
+    normalizedCode,
+    "tic-tac-toe",
+  );
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
@@ -141,7 +141,7 @@ export function joinTicTacToeLobbyByCode(
 
   if (rejoiningPlayer) {
     const nextLobby = touchLobby(lobby, now);
-    lobbies.set(normalizedCode, nextLobby);
+    await saveStoredLobby("tic-tac-toe", nextLobby);
 
     return {
       ok: true,
@@ -173,7 +173,7 @@ export function joinTicTacToeLobbyByCode(
     waitingExpiresAt: null,
   };
 
-  lobbies.set(normalizedCode, nextLobby);
+  await saveStoredLobby("tic-tac-toe", nextLobby);
 
   return {
     ok: true,
@@ -184,14 +184,14 @@ export function joinTicTacToeLobbyByCode(
   };
 }
 
-export function placeTicTacToeLobbyMark(
+export async function placeTicTacToeLobbyMark(
   code: string,
   playerId: string,
   index: number,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
-}> {
-  const lobbyResult = getTicTacToeLobbyByCode(code);
+}>> {
+  const lobbyResult = await getTicTacToeLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -229,7 +229,7 @@ export function placeTicTacToeLobbyMark(
     index,
   });
   const nextLobby = updateLobbyGame(lobby, game);
-  getLobbyStore().set(lobby.code, nextLobby);
+  await saveStoredLobby("tic-tac-toe", nextLobby);
 
   return {
     ok: true,
@@ -239,13 +239,13 @@ export function placeTicTacToeLobbyMark(
   };
 }
 
-export function startNewTicTacToeLobbyRound(
+export async function startNewTicTacToeLobbyRound(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
-}> {
-  const lobbyResult = getTicTacToeLobbyByCode(code);
+}>> {
+  const lobbyResult = await getTicTacToeLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -259,7 +259,7 @@ export function startNewTicTacToeLobbyRound(
 
   const game = gameReducer(lobbyResult.data.lobby.game, { type: "NEW_ROUND" });
   const nextLobby = resetLobbyReadiness(lobbyResult.data.lobby, game);
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("tic-tac-toe", nextLobby);
 
   return {
     ok: true,
@@ -269,13 +269,13 @@ export function startNewTicTacToeLobbyRound(
   };
 }
 
-export function resetTicTacToeLobbyMatch(
+export async function resetTicTacToeLobbyMatch(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
-}> {
-  const lobbyResult = getTicTacToeLobbyByCode(code);
+}>> {
+  const lobbyResult = await getTicTacToeLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -291,7 +291,7 @@ export function resetTicTacToeLobbyMatch(
     type: "RESET_SCORES",
   });
   const nextLobby = resetLobbyReadiness(lobbyResult.data.lobby, game);
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("tic-tac-toe", nextLobby);
 
   return {
     ok: true,
@@ -301,13 +301,13 @@ export function resetTicTacToeLobbyMatch(
   };
 }
 
-export function readyTicTacToeLobbyPlayer(
+export async function readyTicTacToeLobbyPlayer(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: TicTacToeLobby;
-}> {
-  const lobbyResult = getTicTacToeLobbyByCode(code);
+}>> {
+  const lobbyResult = await getTicTacToeLobbyByCode(code);
 
   if (!lobbyResult.ok) {
     return lobbyResult;
@@ -343,7 +343,7 @@ export function readyTicTacToeLobbyPlayer(
         : null,
   };
 
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("tic-tac-toe", nextLobby);
 
   return {
     ok: true,
@@ -357,25 +357,22 @@ export function isTicTacToePlayerId(value: string): value is Player {
   return value === "X" || value === "O";
 }
 
-export function deleteTicTacToeLobbyByCode(code: string): void {
-  getLobbyStore().delete(normalizeLobbyCode(code));
+export async function deleteTicTacToeLobbyByCode(code: string): Promise<void> {
+  await deleteStoredLobby(normalizeLobbyCode(code), "tic-tac-toe");
 }
 
-export function hasTicTacToeLobbyByCode(code: string): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  return lobbies.has(normalizeLobbyCode(code));
+export async function hasTicTacToeLobbyByCode(code: string): Promise<boolean> {
+  return hasStoredLobbyByCode(normalizeLobbyCode(code), "tic-tac-toe");
 }
 
-export function isTicTacToeLobbyHost(
+export async function isTicTacToeLobbyHost(
   code: string,
   rejoinToken: string,
-): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  const lobby = lobbies.get(normalizeLobbyCode(code));
+): Promise<boolean> {
+  const lobby = await getStoredLobby<TicTacToeLobby>(
+    normalizeLobbyCode(code),
+    "tic-tac-toe",
+  );
   const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
 
   return Boolean(
@@ -495,10 +492,4 @@ function touchLobby(lobby: TicTacToeLobby, now: number): TicTacToeLobby {
     ...lobby,
     updatedAt: now,
   };
-}
-
-function getLobbyStore(): Map<string, TicTacToeLobby> {
-  globalForTicTacToe.__miniArcadeTicTacToeLobbies ??= new Map();
-
-  return globalForTicTacToe.__miniArcadeTicTacToeLobbies;
 }

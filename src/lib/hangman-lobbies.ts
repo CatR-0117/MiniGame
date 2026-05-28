@@ -12,7 +12,6 @@ import {
   type HangmanPlayerId,
 } from "@/lib/hangman";
 import {
-  cleanupExpiredLobbies,
   lobbyError,
   normalizeLobbyCode,
   type LobbyResult,
@@ -22,23 +21,25 @@ import {
   generateUniqueArcadeLobbyCode,
   registerArcadeLobbyCode,
 } from "@/lib/arcade-lobby-directory";
+import {
+  cleanupExpiredLobbyRecords,
+  deleteStoredLobby,
+  getStoredLobby,
+  hasStoredLobbyByCode,
+  saveStoredLobby,
+} from "@/lib/lobby-store";
 
-const globalForHangman = globalThis as typeof globalThis & {
-  __miniArcadeHangmanLobbies?: Map<string, HangmanLobby>;
-};
-
-export function createHangmanLobbyForPlayer(
+export async function createHangmanLobbyForPlayer(
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: HangmanLobbyView;
   playerId: HangmanPlayerId;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
-  const code = generateUniqueArcadeLobbyCode();
+  const code = await generateUniqueArcadeLobbyCode();
   const privateLobby = createHangmanLobby(
     code,
     playerName,
@@ -48,8 +49,8 @@ export function createHangmanLobbyForPlayer(
   );
   const lobby = getHangmanLobbyView(privateLobby, "player-1");
 
-  lobbies.set(code, privateLobby);
-  registerArcadeLobbyCode(code, "hangman");
+  await saveStoredLobby("hangman", privateLobby);
+  await registerArcadeLobbyCode(code, "hangman");
 
   if (!lobby) {
     throw new Error("Failed to create lobby.");
@@ -61,17 +62,16 @@ export function createHangmanLobbyForPlayer(
   };
 }
 
-export function createHangmanLobbyForHostCode(
+export async function createHangmanLobbyForHostCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): {
+): Promise<{
   lobby: HangmanLobbyView;
   playerId: HangmanPlayerId;
-} {
-  const lobbies = getLobbyStore();
+}> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
+  await cleanupExpiredLobbyRecords(now);
 
   const normalizedCode = normalizeLobbyCode(code);
   const privateLobby = createHangmanLobby(
@@ -83,8 +83,8 @@ export function createHangmanLobbyForHostCode(
   );
   const lobby = getHangmanLobbyView(privateLobby, "player-1");
 
-  lobbies.set(normalizedCode, privateLobby);
-  registerArcadeLobbyCode(normalizedCode, "hangman");
+  await saveStoredLobby("hangman", privateLobby);
+  await registerArcadeLobbyCode(normalizedCode, "hangman");
 
   if (!lobby) {
     throw new Error("Failed to create lobby.");
@@ -96,13 +96,13 @@ export function createHangmanLobbyForHostCode(
   };
 }
 
-export function getHangmanLobbyByCode(
+export async function getHangmanLobbyByCode(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobbyView;
-}> {
-  const authResult = getAuthorizedLobby(code, playerId);
+}>> {
+  const authResult = await getAuthorizedLobby(code, playerId);
 
   if (!authResult.ok) {
     return authResult;
@@ -116,20 +116,18 @@ export function getHangmanLobbyByCode(
   };
 }
 
-export function joinHangmanLobbyByCode(
+export async function joinHangmanLobbyByCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobbyView;
   playerId: HangmanPlayerId;
-}> {
-  const lobbies = getLobbyStore();
+}>> {
   const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
 
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<HangmanLobby>(normalizedCode, "hangman");
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
@@ -151,7 +149,7 @@ export function joinHangmanLobbyByCode(
       return lobbyError(403, "Player is not in this lobby.");
     }
 
-    lobbies.set(normalizedCode, nextLobby);
+    await saveStoredLobby("hangman", nextLobby);
 
     return {
       ok: true,
@@ -188,7 +186,7 @@ export function joinHangmanLobbyByCode(
     return lobbyError(403, "Player is not in this lobby.");
   }
 
-  lobbies.set(normalizedCode, nextLobby);
+  await saveStoredLobby("hangman", nextLobby);
 
   return {
     ok: true,
@@ -199,13 +197,13 @@ export function joinHangmanLobbyByCode(
   };
 }
 
-export function readyHangmanLobbyPlayer(
+export async function readyHangmanLobbyPlayer(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobbyView;
-}> {
-  const authResult = getAuthorizedLobby(code, playerId);
+}>> {
+  const authResult = await getAuthorizedLobby(code, playerId);
 
   if (!authResult.ok) {
     return authResult;
@@ -222,19 +220,19 @@ export function readyHangmanLobbyPlayer(
     authResult.data.lobby,
     authResult.data.playerId,
   );
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("hangman", nextLobby);
 
   return getLobbyViewResult(nextLobby, authResult.data.playerId);
 }
 
-export function guessHangmanLobbyLetter(
+export async function guessHangmanLobbyLetter(
   code: string,
   playerId: string,
   letter: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobbyView;
-}> {
-  const authResult = getAuthorizedLobby(code, playerId);
+}>> {
+  const authResult = await getAuthorizedLobby(code, playerId);
 
   if (!authResult.ok) {
     return authResult;
@@ -255,45 +253,45 @@ export function guessHangmanLobbyLetter(
     authResult.data.playerId,
     normalizedLetter,
   );
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("hangman", nextLobby);
 
   return getLobbyViewResult(nextLobby, authResult.data.playerId);
 }
 
-export function restartHangmanLobbyRound(
+export async function restartHangmanLobbyRound(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobbyView;
-}> {
-  const authResult = getAuthorizedLobby(code, playerId);
+}>> {
+  const authResult = await getAuthorizedLobby(code, playerId);
 
   if (!authResult.ok) {
     return authResult;
   }
 
   const nextLobby = restartHangmanLobby(authResult.data.lobby);
-  getLobbyStore().set(nextLobby.code, nextLobby);
+  await saveStoredLobby("hangman", nextLobby);
 
   return getLobbyViewResult(nextLobby, authResult.data.playerId);
 }
 
-export function deleteHangmanLobbyByCode(code: string): void {
-  getLobbyStore().delete(normalizeLobbyCode(code));
+export async function deleteHangmanLobbyByCode(code: string): Promise<void> {
+  await deleteStoredLobby(normalizeLobbyCode(code), "hangman");
 }
 
-export function hasHangmanLobbyByCode(code: string): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  return lobbies.has(normalizeLobbyCode(code));
+export async function hasHangmanLobbyByCode(code: string): Promise<boolean> {
+  return hasStoredLobbyByCode(normalizeLobbyCode(code), "hangman");
 }
 
-export function isHangmanLobbyHost(code: string, rejoinToken: string): boolean {
-  const lobbies = getLobbyStore();
-  cleanupExpiredLobbies(lobbies, Date.now());
-
-  const lobby = lobbies.get(normalizeLobbyCode(code));
+export async function isHangmanLobbyHost(
+  code: string,
+  rejoinToken: string,
+): Promise<boolean> {
+  const lobby = await getStoredLobby<HangmanLobby>(
+    normalizeLobbyCode(code),
+    "hangman",
+  );
   const rejoinTokenHash = createRejoinTokenHash(rejoinToken);
 
   return Boolean(
@@ -303,20 +301,16 @@ export function isHangmanLobbyHost(code: string, rejoinToken: string): boolean {
   );
 }
 
-function getAuthorizedLobby(
+async function getAuthorizedLobby(
   code: string,
   playerId: string,
-): LobbyResult<{
+): Promise<LobbyResult<{
   lobby: HangmanLobby;
   lobbyView: HangmanLobbyView;
   playerId: HangmanPlayerId;
-}> {
-  const lobbies = getLobbyStore();
-  const now = Date.now();
-  cleanupExpiredLobbies(lobbies, now);
-
+}>> {
   const normalizedCode = normalizeLobbyCode(code);
-  const lobby = lobbies.get(normalizedCode);
+  const lobby = await getStoredLobby<HangmanLobby>(normalizedCode, "hangman");
 
   if (!lobby) {
     return lobbyError(404, "Lobby not found.");
@@ -364,10 +358,4 @@ function getLobbyViewResult(
       lobby: lobbyView,
     },
   };
-}
-
-function getLobbyStore(): Map<string, HangmanLobby> {
-  globalForHangman.__miniArcadeHangmanLobbies ??= new Map();
-
-  return globalForHangman.__miniArcadeHangmanLobbies;
 }

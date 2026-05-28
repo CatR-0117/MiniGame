@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const body = await readJsonObject(request);
   const playerName = readStringField(body, "playerName");
   const rejoinToken = readStringField(body, "rejoinToken");
-  const lobby = createTicTacToeLobbyForPlayer(playerName, rejoinToken);
+  const lobby = await createTicTacToeLobbyForPlayer(playerName, rejoinToken);
 
   return NextResponse.json(lobby, { status: 201 });
 }

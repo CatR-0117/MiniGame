@@ -50,12 +50,12 @@ export type ArcadeLobbyStatusData = {
   game: ArcadeLobbyGame;
 };
 
-export function joinArcadeLobbyByCode(
+export async function joinArcadeLobbyByCode(
   code: string,
   playerName: string,
   rejoinToken: string,
-): LobbyResult<ArcadeLobbyJoinData> {
-  const knownGame = getArcadeLobbyGame(code);
+): Promise<LobbyResult<ArcadeLobbyJoinData>> {
+  const knownGame = await getArcadeLobbyGame(code);
 
   if (knownGame) {
     return joinKnownArcadeLobby(knownGame, code, playerName, rejoinToken);
@@ -64,7 +64,12 @@ export function joinArcadeLobbyByCode(
   const fallbackGames: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
 
   for (const game of fallbackGames) {
-    const result = joinKnownArcadeLobby(game, code, playerName, rejoinToken);
+    const result = await joinKnownArcadeLobby(
+      game,
+      code,
+      playerName,
+      rejoinToken,
+    );
 
     if (result.ok) {
       return result;
@@ -78,14 +83,14 @@ export function joinArcadeLobbyByCode(
   return lobbyError(404, "Lobby not found.");
 }
 
-export function getArcadeLobbyStatusByCode(
+export async function getArcadeLobbyStatusByCode(
   code: string,
-): LobbyResult<ArcadeLobbyStatusData> {
-  const knownGame = getArcadeLobbyGame(code);
+): Promise<LobbyResult<ArcadeLobbyStatusData>> {
+  const knownGame = await getArcadeLobbyGame(code);
   const game =
-    knownGame && hasKnownArcadeLobby(knownGame, code)
+    knownGame && (await hasKnownArcadeLobby(knownGame, code))
       ? knownGame
-      : findArcadeLobbyGameByCode(code);
+      : await findArcadeLobbyGameByCode(code);
 
   if (!game) {
     return lobbyError(404, "Lobby not found.");
@@ -99,32 +104,33 @@ export function getArcadeLobbyStatusByCode(
   };
 }
 
-export function switchArcadeLobbyGame(
+export async function switchArcadeLobbyGame(
   code: string,
   playerName: string,
   rejoinToken: string,
   nextGame: string,
-): LobbyResult<ArcadeLobbyJoinData> {
+): Promise<LobbyResult<ArcadeLobbyJoinData>> {
   if (!isArcadeLobbyGame(nextGame)) {
     return lobbyError(400, "Invalid game.");
   }
 
   const currentGame =
-    getArcadeLobbyGame(code) ?? findArcadeLobbyGameByHost(code, rejoinToken);
+    (await getArcadeLobbyGame(code)) ??
+    (await findArcadeLobbyGameByHost(code, rejoinToken));
 
   if (!currentGame) {
     return lobbyError(404, "Lobby not found.");
   }
 
-  if (!isLobbyHost(currentGame, code, rejoinToken)) {
+  if (!(await isLobbyHost(currentGame, code, rejoinToken))) {
     return lobbyError(403, "Only the lobby host can change games.");
   }
 
   if (currentGame !== nextGame) {
-    deleteKnownArcadeLobby(currentGame, code);
+    await deleteKnownArcadeLobby(currentGame, code);
   }
 
-  const result = createKnownArcadeLobby(
+  const result = await createKnownArcadeLobby(
     nextGame,
     code,
     playerName,
@@ -140,14 +146,18 @@ export function switchArcadeLobbyGame(
   };
 }
 
-function joinKnownArcadeLobby(
+async function joinKnownArcadeLobby(
   game: ArcadeLobbyGame,
   code: string,
   playerName: string,
   rejoinToken: string,
-): LobbyResult<ArcadeLobbyJoinData> {
+): Promise<LobbyResult<ArcadeLobbyJoinData>> {
   if (game === "tic-tac-toe") {
-    const result = joinTicTacToeLobbyByCode(code, playerName, rejoinToken);
+    const result = await joinTicTacToeLobbyByCode(
+      code,
+      playerName,
+      rejoinToken,
+    );
 
     if (!result.ok) {
       return result;
@@ -163,7 +173,7 @@ function joinKnownArcadeLobby(
   }
 
   if (game === "memory") {
-    const result = joinMemoryLobbyByCode(code, playerName, rejoinToken);
+    const result = await joinMemoryLobbyByCode(code, playerName, rejoinToken);
 
     if (!result.ok) {
       return result;
@@ -178,7 +188,7 @@ function joinKnownArcadeLobby(
     };
   }
 
-  const result = joinHangmanLobbyByCode(code, playerName, rejoinToken);
+  const result = await joinHangmanLobbyByCode(code, playerName, rejoinToken);
 
   if (!result.ok) {
     return result;
@@ -193,12 +203,12 @@ function joinKnownArcadeLobby(
   };
 }
 
-function createKnownArcadeLobby(
+async function createKnownArcadeLobby(
   game: ArcadeLobbyGame,
   code: string,
   playerName: string,
   rejoinToken: string,
-): Omit<ArcadeLobbyJoinData, "game"> {
+): Promise<Omit<ArcadeLobbyJoinData, "game">> {
   if (game === "tic-tac-toe") {
     return createTicTacToeLobbyForHostCode(code, playerName, rejoinToken);
   }
@@ -210,21 +220,27 @@ function createKnownArcadeLobby(
   return createHangmanLobbyForHostCode(code, playerName, rejoinToken);
 }
 
-function deleteKnownArcadeLobby(game: ArcadeLobbyGame, code: string): void {
+async function deleteKnownArcadeLobby(
+  game: ArcadeLobbyGame,
+  code: string,
+): Promise<void> {
   if (game === "tic-tac-toe") {
-    deleteTicTacToeLobbyByCode(code);
+    await deleteTicTacToeLobbyByCode(code);
     return;
   }
 
   if (game === "memory") {
-    deleteMemoryLobbyByCode(code);
+    await deleteMemoryLobbyByCode(code);
     return;
   }
 
-  deleteHangmanLobbyByCode(code);
+  await deleteHangmanLobbyByCode(code);
 }
 
-function hasKnownArcadeLobby(game: ArcadeLobbyGame, code: string): boolean {
+async function hasKnownArcadeLobby(
+  game: ArcadeLobbyGame,
+  code: string,
+): Promise<boolean> {
   if (game === "tic-tac-toe") {
     return hasTicTacToeLobbyByCode(code);
   }
@@ -236,30 +252,44 @@ function hasKnownArcadeLobby(game: ArcadeLobbyGame, code: string): boolean {
   return hasHangmanLobbyByCode(code);
 }
 
-function findArcadeLobbyGameByCode(code: string): ArcadeLobbyGame | null {
+async function findArcadeLobbyGameByCode(
+  code: string,
+): Promise<ArcadeLobbyGame | null> {
   const games: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
 
-  return games.find((game) => hasKnownArcadeLobby(game, code)) ?? null;
+  for (const game of games) {
+    if (await hasKnownArcadeLobby(game, code)) {
+      return game;
+    }
+  }
+
+  return null;
 }
 
-function findArcadeLobbyGameByHost(
+async function findArcadeLobbyGameByHost(
   code: string,
   rejoinToken: string,
-): ArcadeLobbyGame | null {
+): Promise<ArcadeLobbyGame | null> {
   const games: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
 
-  return (
-    games.find((game) =>
-      rejoinToken ? isLobbyHost(game, code, rejoinToken) : false,
-    ) ?? null
-  );
+  if (!rejoinToken) {
+    return null;
+  }
+
+  for (const game of games) {
+    if (await isLobbyHost(game, code, rejoinToken)) {
+      return game;
+    }
+  }
+
+  return null;
 }
 
-function isLobbyHost(
+async function isLobbyHost(
   game: ArcadeLobbyGame,
   code: string,
   rejoinToken: string,
-): boolean {
+): Promise<boolean> {
   if (game === "tic-tac-toe") {
     return isTicTacToeLobbyHost(code, rejoinToken);
   }

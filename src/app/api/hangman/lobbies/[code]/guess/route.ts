@@ -15,7 +15,7 @@ export async function POST(request: Request, context: LobbyRouteContext) {
   const body = await readJsonObject(request);
   const playerId = readStringField(body, "playerId");
   const letter = readStringField(body, "letter");
-  const result = guessHangmanLobbyLetter(code, playerId, letter);
+  const result = await guessHangmanLobbyLetter(code, playerId, letter);
 
   if (!result.ok) {
     return NextResponse.json(
