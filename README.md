@@ -21,9 +21,13 @@ SUPABASE_API_KEY=your-supabase-publishable-or-anon-key
 
 Run `supabase/arcade_lobbies.sql` in the Supabase SQL editor first. It creates a
 single `public.arcade_lobbies` table that stores each lobby as JSON with lobby
-code, game, and expiration metadata. If Supabase is unavailable or the table is
-missing during local development, the app logs a warning and temporarily falls
-back to in-memory lobbies.
+code, game, and expiration metadata.
+
+On Vercel, add the same environment variables in Project Settings before
+deploying. Do not rely on in-memory lobbies in Vercel serverless functions:
+requests can hit different function instances, which makes lobbies disappear.
+The app only falls back to memory outside production unless
+`SUPABASE_LOBBY_FALLBACK=true` is set.
 
 ## Memory Cards
 
@@ -31,7 +35,7 @@ back to in-memory lobbies.
 - Create a lobby to receive a 6-character lobby code.
 - A second player can join the lobby with that code from another browser or device connected to the same running app.
 - Players take turns flipping cards. Matching pairs score a point and keep the turn; missed pairs pass the turn.
-- Lobbies persist through Supabase when configured, with an in-memory fallback for local development.
+- Lobbies persist through Supabase, with an in-memory fallback only for local development.
 
 ## Scripts
 

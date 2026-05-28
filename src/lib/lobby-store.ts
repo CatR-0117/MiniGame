@@ -162,13 +162,32 @@ async function withStoreFallback<T>(
   supabaseOperation: () => Promise<T>,
   memoryOperation: () => T,
 ): Promise<T> {
-  if (!getSupabaseConfig() || globalForLobbyStore.__miniArcadeSupabaseUnavailable) {
+  const canUseMemoryFallback = shouldUseMemoryFallback();
+
+  if (!getSupabaseConfig()) {
+    if (canUseMemoryFallback) {
+      return memoryOperation();
+    }
+
+    throw new Error(
+      "Supabase lobby store is not configured. Set SUPABASE_REST_URL and SUPABASE_API_KEY.",
+    );
+  }
+
+  if (
+    canUseMemoryFallback &&
+    globalForLobbyStore.__miniArcadeSupabaseUnavailable
+  ) {
     return memoryOperation();
   }
 
   try {
     return await supabaseOperation();
   } catch (error) {
+    if (!canUseMemoryFallback) {
+      throw error;
+    }
+
     globalForLobbyStore.__miniArcadeSupabaseUnavailable = true;
     warnAboutSupabaseFallback(error);
 
@@ -275,6 +294,18 @@ function getSupabaseConfig(): SupabaseConfig | null {
     restUrl,
     apiKey,
   };
+}
+
+function shouldUseMemoryFallback(): boolean {
+  if (process.env.SUPABASE_LOBBY_FALLBACK === "true") {
+    return true;
+  }
+
+  if (process.env.SUPABASE_LOBBY_FALLBACK === "false") {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1";
 }
 
 function normalizeSupabaseRestUrl(value: string): string {
