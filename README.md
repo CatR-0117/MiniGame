@@ -1,6 +1,6 @@
 # Mini Arcade
 
-A Next.js and Tailwind CSS mini arcade with a game chooser, Tic-Tac-Toe, and Memory Cards.
+A Next.js and Tailwind CSS mini arcade with a game chooser, Tic-Tac-Toe, Memory Cards, Hangman, Word Scramble, and Word Search.
 
 ## Tic-Tac-Toe Rules
 
@@ -36,6 +36,24 @@ The app only falls back to memory outside production unless
 - A second player can join the lobby with that code from another browser or device connected to the same running app.
 - Players take turns flipping cards. Matching pairs score a point and keep the turn; missed pairs pass the turn.
 - Lobbies persist through Supabase, with an in-memory fallback only for local development.
+
+## Hangman
+
+- Choose Solo to solve a hidden word, or Lobby to race another player with the same word.
+- Lobby players ready up before the round starts.
+- The first player to solve the word wins; if both players run out of guesses, the round ends with no winner.
+
+## Word Scramble
+
+- Choose Solo to unscramble a word, or Lobby to race another player with the same scrambled word.
+- Lobby players ready up before the round starts.
+- Each player gets 6 guesses. The first correct answer wins the round.
+
+## Word Search
+
+- Choose Solo to find every word on a letter grid, or Lobby to race another player on the same board.
+- Select the first and last letters of a word in a straight line.
+- Lobby players ready up before the round starts. The first player to find every listed word wins.
 
 ## Scripts
 

@@ -19,6 +19,26 @@ import {
   joinTicTacToeLobbyByCode,
   type TicTacToeLobby,
 } from "@/lib/tic-tac-toe-lobbies";
+import type {
+  WordScrambleLobbyView,
+  WordScramblePlayerId,
+} from "@/lib/word-scramble";
+import {
+  createWordScrambleLobbyForHostCode,
+  hasWordScrambleLobbyByCode,
+  isWordScrambleLobbyHost,
+  joinWordScrambleLobbyByCode,
+} from "@/lib/word-scramble-lobbies";
+import type {
+  WordSearchLobbyView,
+  WordSearchPlayerId,
+} from "@/lib/word-search";
+import {
+  createWordSearchLobbyForHostCode,
+  hasWordSearchLobbyByCode,
+  isWordSearchLobbyHost,
+  joinWordSearchLobbyByCode,
+} from "@/lib/word-search-lobbies";
 import type { Player } from "@/lib/game";
 import {
   getArcadeLobbyGame,
@@ -41,6 +61,16 @@ export type ArcadeLobbyJoinData =
       game: "hangman";
       lobby: HangmanLobbyView;
       playerId: HangmanPlayerId;
+    }
+  | {
+      game: "word-scramble";
+      lobby: WordScrambleLobbyView;
+      playerId: WordScramblePlayerId;
+    }
+  | {
+      game: "word-search";
+      lobby: WordSearchLobbyView;
+      playerId: WordSearchPlayerId;
     };
 
 export type ArcadeLobbyStatusData = {
@@ -58,7 +88,13 @@ export async function joinArcadeLobbyByCode(
     return joinKnownArcadeLobby(knownGame, code, playerName, rejoinToken);
   }
 
-  const fallbackGames: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
+  const fallbackGames: ArcadeLobbyGame[] = [
+    "tic-tac-toe",
+    "memory",
+    "hangman",
+    "word-scramble",
+    "word-search",
+  ];
 
   for (const game of fallbackGames) {
     const result = await joinKnownArcadeLobby(
@@ -181,7 +217,47 @@ async function joinKnownArcadeLobby(
     };
   }
 
-  const result = await joinHangmanLobbyByCode(code, playerName, rejoinToken);
+  if (game === "hangman") {
+    const result = await joinHangmanLobbyByCode(code, playerName, rejoinToken);
+
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      data: {
+        game,
+        ...result.data,
+      },
+    };
+  }
+
+  if (game === "word-scramble") {
+    const result = await joinWordScrambleLobbyByCode(
+      code,
+      playerName,
+      rejoinToken,
+    );
+
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      data: {
+        game,
+        ...result.data,
+      },
+    };
+  }
+
+  const result = await joinWordSearchLobbyByCode(
+    code,
+    playerName,
+    rejoinToken,
+  );
 
   if (!result.ok) {
     return result;
@@ -210,7 +286,15 @@ async function createKnownArcadeLobby(
     return createMemoryLobbyForHostCode(code, playerName, rejoinToken);
   }
 
-  return createHangmanLobbyForHostCode(code, playerName, rejoinToken);
+  if (game === "hangman") {
+    return createHangmanLobbyForHostCode(code, playerName, rejoinToken);
+  }
+
+  if (game === "word-scramble") {
+    return createWordScrambleLobbyForHostCode(code, playerName, rejoinToken);
+  }
+
+  return createWordSearchLobbyForHostCode(code, playerName, rejoinToken);
 }
 
 async function hasKnownArcadeLobby(
@@ -225,13 +309,27 @@ async function hasKnownArcadeLobby(
     return hasMemoryLobbyByCode(code);
   }
 
-  return hasHangmanLobbyByCode(code);
+  if (game === "hangman") {
+    return hasHangmanLobbyByCode(code);
+  }
+
+  if (game === "word-scramble") {
+    return hasWordScrambleLobbyByCode(code);
+  }
+
+  return hasWordSearchLobbyByCode(code);
 }
 
 async function findArcadeLobbyGameByCode(
   code: string,
 ): Promise<ArcadeLobbyGame | null> {
-  const games: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
+  const games: ArcadeLobbyGame[] = [
+    "tic-tac-toe",
+    "memory",
+    "hangman",
+    "word-scramble",
+    "word-search",
+  ];
 
   for (const game of games) {
     if (await hasKnownArcadeLobby(game, code)) {
@@ -246,7 +344,13 @@ async function findArcadeLobbyGameByHost(
   code: string,
   rejoinToken: string,
 ): Promise<ArcadeLobbyGame | null> {
-  const games: ArcadeLobbyGame[] = ["tic-tac-toe", "memory", "hangman"];
+  const games: ArcadeLobbyGame[] = [
+    "tic-tac-toe",
+    "memory",
+    "hangman",
+    "word-scramble",
+    "word-search",
+  ];
 
   if (!rejoinToken) {
     return null;
@@ -274,9 +378,23 @@ async function isLobbyHost(
     return isMemoryLobbyHost(code, rejoinToken);
   }
 
-  return isHangmanLobbyHost(code, rejoinToken);
+  if (game === "hangman") {
+    return isHangmanLobbyHost(code, rejoinToken);
+  }
+
+  if (game === "word-scramble") {
+    return isWordScrambleLobbyHost(code, rejoinToken);
+  }
+
+  return isWordSearchLobbyHost(code, rejoinToken);
 }
 
 function isArcadeLobbyGame(value: string): value is ArcadeLobbyGame {
-  return value === "tic-tac-toe" || value === "memory" || value === "hangman";
+  return (
+    value === "tic-tac-toe" ||
+    value === "memory" ||
+    value === "hangman" ||
+    value === "word-scramble" ||
+    value === "word-search"
+  );
 }

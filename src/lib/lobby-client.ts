@@ -1,6 +1,11 @@
 import { getJson } from "@/lib/http-client";
 
-export type ArcadeLobbyGame = "tic-tac-toe" | "memory" | "hangman";
+export type ArcadeLobbyGame =
+  | "tic-tac-toe"
+  | "memory"
+  | "hangman"
+  | "word-scramble"
+  | "word-search";
 
 export type StoredLobbySession<TPlayerId extends string> = {
   code: string;

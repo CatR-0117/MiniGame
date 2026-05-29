@@ -6,6 +6,25 @@ import {
   joinHangmanLobby,
   readyHangmanPlayer,
 } from "../src/lib/hangman";
+import {
+  WORD_SCRAMBLE_MAX_GUESSES,
+  createWordScrambleLobby,
+  createWordScrambleSoloGame,
+  getWordScrambleLobbyView,
+  joinWordScrambleLobby,
+  readyWordScramblePlayer,
+  submitWordScrambleGuess,
+  submitWordScrambleSoloGuess,
+} from "../src/lib/word-scramble";
+import {
+  WORD_SEARCH_WORD_BANKS,
+  createWordSearchLobby,
+  getWordSearchLobbyView,
+  joinWordSearchLobby,
+  readyWordSearchPlayer,
+  submitWordSearchSelection,
+  type WordSearchPuzzle,
+} from "../src/lib/word-search";
 
 test("solo mode lets the player move and the bot answer", async ({ page }) => {
   await page.goto("/");
@@ -503,4 +522,213 @@ test("hangman lobby records the first solver as the fastest winner", () => {
   expect(playerOneView?.players[0].elapsedMs).toBe(600);
   expect(playerOneView?.revealedWord).toBe("ARCADE");
   expect(playerTwoView?.wordSlots.join("")).toBe("ARCADE");
+});
+
+test("word scramble solo mode accepts guesses", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Word Scramble/ }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Word Scramble" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Scrambled word")).toBeVisible();
+  await expect(page.getByText("Make a guess")).toBeVisible();
+
+  await page.getByLabel("Word scramble answer").fill("zzzzzzzzzz");
+  await page.getByRole("button", { name: "Submit Guess" }).click();
+
+  await expect(page.getByText("Try another word")).toBeVisible();
+});
+
+test("word scramble lobby can be created, joined, and started", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await page.getByRole("button", { name: /Word Scramble/ }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const creatorLobbyCode = page.locator(
+    'output[aria-label="Word Scramble lobby code"]',
+  );
+  await expect(creatorLobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await creatorLobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  await expect(page.getByText("Waiting for Player 2")).toBeVisible();
+
+  const joiner = await context.newPage();
+  await joiner.goto("/");
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
+  await joiner.getByRole("button", { name: "Join Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Word Scramble lobby code"]'),
+  ).toHaveText(code!);
+  await expect(joiner.getByText("Ready to race")).toBeVisible();
+
+  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
+
+  await expect(joiner.getByText("Race is live")).toBeVisible();
+  await expect(page.getByText("Race is live")).toBeVisible();
+  await expect(joiner.getByLabel("Word scramble answer")).toBeVisible();
+});
+
+test("word scramble lobby records the first correct answer as winner", () => {
+  const puzzle = { word: "PLANET", category: "Space" };
+  let lobby = createWordScrambleLobby(
+    "ABC123",
+    "Ada",
+    1_000,
+    puzzle,
+    "NETPLA",
+  );
+
+  lobby = joinWordScrambleLobby(lobby, "Grace", 1_100);
+  lobby = readyWordScramblePlayer(lobby, "player-1", 2_000);
+  lobby = readyWordScramblePlayer(lobby, "player-2", 3_000);
+  lobby = submitWordScrambleGuess(lobby, "player-2", "rocket", 3_100);
+  lobby = submitWordScrambleGuess(lobby, "player-1", "planet", 3_600);
+
+  const playerOneView = getWordScrambleLobbyView(lobby, "player-1");
+  const playerTwoView = getWordScrambleLobbyView(lobby, "player-2");
+
+  expect(lobby.status).toBe("finished");
+  expect(lobby.winnerId).toBe("player-1");
+  expect(playerOneView?.players[0].elapsedMs).toBe(600);
+  expect(playerOneView?.revealedWord).toBe("PLANET");
+  expect(playerTwoView?.localGuesses).toEqual(["ROCKET"]);
+});
+
+test("word scramble solo game can advance after a correct answer", () => {
+  const game = createWordScrambleSoloGame();
+  const solvedGame = submitWordScrambleSoloGuess(game, game.puzzle.word);
+  const nextGame =
+    solvedGame.status === "won"
+      ? createWordScrambleSoloGame(game.puzzle.word)
+      : solvedGame;
+
+  expect(solvedGame.status).toBe("won");
+  expect(nextGame.status).toBe("playing");
+  expect(nextGame.puzzle.word).not.toBe(game.puzzle.word);
+  expect(nextGame.guesses).toHaveLength(0);
+  expect(nextGame.guesses.length).toBeLessThanOrEqual(
+    WORD_SCRAMBLE_MAX_GUESSES,
+  );
+});
+
+test("word search solo mode lets the player select cells", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Word Search/ }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Word Search" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Word search grid")).toBeVisible();
+  await expect(page.locator('button[aria-label^="Word search row"]')).toHaveCount(
+    100,
+  );
+  await expect(page.getByText("Select a word")).toBeVisible();
+
+  await page.locator('button[aria-label^="Word search row 1, column 1,"]').click();
+  await expect(page.getByText("Choose the last letter")).toBeVisible();
+  await page.locator('button[aria-label^="Word search row 1, column 2,"]').click();
+  await expect(page.getByText("Keep searching")).toBeVisible();
+});
+
+test("word search lobby can be created, joined, and started", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /Multiplayer/ }).click();
+  await page.getByRole("button", { name: /Word Search/ }).click();
+  await page.getByRole("button", { name: "Create Lobby" }).click();
+
+  const creatorLobbyCode = page.locator(
+    'output[aria-label="Word Search lobby code"]',
+  );
+  await expect(creatorLobbyCode).toHaveText(/[A-Z0-9]{6}/);
+  const code = (await creatorLobbyCode.textContent())?.trim();
+
+  expect(code).toBeTruthy();
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  await expect(page.getByText("Waiting for Player 2")).toBeVisible();
+
+  const joiner = await context.newPage();
+  await joiner.goto("/");
+  await joiner.getByRole("button", { name: /Multiplayer/ }).click();
+  await joiner.getByLabel("Arcade lobby code").fill(code!);
+  await joiner.getByRole("button", { name: "Join Lobby" }).click();
+
+  await expect(
+    joiner.locator('output[aria-label="Word Search lobby code"]'),
+  ).toHaveText(code!);
+  await expect(joiner.getByText("Ready to search")).toBeVisible();
+
+  await joiner.getByRole("button", { name: "Ready", exact: true }).click();
+
+  await expect(joiner.getByText("Race is live")).toBeVisible();
+  await expect(page.getByText("Race is live")).toBeVisible();
+  await expect(joiner.getByLabel("Word search grid")).toBeVisible();
+});
+
+test("word search lobby records the first player to find every word", () => {
+  const puzzle: WordSearchPuzzle = {
+    category: "Test",
+    words: ["CAT"],
+    grid: [
+      ["C", "A", "T", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+      ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+    ],
+    placements: [
+      {
+        word: "CAT",
+        path: [
+          { row: 0, col: 0 },
+          { row: 0, col: 1 },
+          { row: 0, col: 2 },
+        ],
+      },
+    ],
+  };
+  let lobby = createWordSearchLobby("ABC123", "Ada", 1_000, puzzle);
+
+  lobby = joinWordSearchLobby(lobby, "Grace", 1_100);
+  lobby = readyWordSearchPlayer(lobby, "player-1", 2_000);
+  lobby = readyWordSearchPlayer(lobby, "player-2", 3_000);
+  lobby = submitWordSearchSelection(
+    lobby,
+    "player-1",
+    { row: 0, col: 0 },
+    { row: 0, col: 2 },
+    3_700,
+  );
+
+  const playerOneView = getWordSearchLobbyView(lobby, "player-1");
+
+  expect(lobby.status).toBe("finished");
+  expect(lobby.winnerId).toBe("player-1");
+  expect(playerOneView?.players[0].elapsedMs).toBe(700);
+  expect(playerOneView?.localFoundWords).toEqual(["CAT"]);
+  expect(playerOneView?.localFoundWordPaths[0].path).toHaveLength(3);
+});
+
+test("word search puzzle banks provide a fuller word list", () => {
+  expect(
+    WORD_SEARCH_WORD_BANKS.every(
+      (bank) => bank.words.length >= 8 && bank.words.length <= 10,
+    ),
+  ).toBe(true);
 });

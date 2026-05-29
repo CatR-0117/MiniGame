@@ -2,10 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Bot, Grid3X3, Keyboard, Layers, LogIn, Users } from "lucide-react";
+import {
+  Bot,
+  Grid3X3,
+  Keyboard,
+  Layers,
+  LogIn,
+  Search,
+  Shuffle,
+  Users,
+} from "lucide-react";
 import { HangmanGame } from "@/components/hangman-game";
 import { MemoryCardGame } from "@/components/memory-card-game";
 import { TicTacToeGame } from "@/components/tic-tac-toe-game";
+import { WordSearchGame } from "@/components/word-search-game";
+import { WordScrambleGame } from "@/components/word-scramble-game";
 import { getErrorMessage, isAbortError, postJson } from "@/lib/http-client";
 import {
   createRejoinToken,
@@ -14,7 +25,12 @@ import {
 } from "@/lib/lobby-client";
 import { normalizeLobbyCode } from "@/lib/lobby-utils";
 
-type ArcadeGame = "tic-tac-toe" | "memory" | "hangman";
+type ArcadeGame =
+  | "tic-tac-toe"
+  | "memory"
+  | "hangman"
+  | "word-scramble"
+  | "word-search";
 type ArcadePlayMode = "singleplayer" | "multiplayer" | "one-device";
 type ArcadeJoinResponse = {
   game: ArcadeGame;
@@ -94,6 +110,26 @@ const GAME_OPTIONS: Array<{
     },
     modes: ["singleplayer", "multiplayer"],
     icon: Keyboard,
+  },
+  {
+    id: "word-scramble",
+    title: "Word Scramble",
+    labels: {
+      singleplayer: "Solo Puzzle",
+      multiplayer: "Lobby Race",
+    },
+    modes: ["singleplayer", "multiplayer"],
+    icon: Shuffle,
+  },
+  {
+    id: "word-search",
+    title: "Word Search",
+    labels: {
+      singleplayer: "Solo Grid",
+      multiplayer: "Lobby Race",
+    },
+    modes: ["singleplayer", "multiplayer"],
+    icon: Search,
   },
 ];
 
@@ -435,7 +471,7 @@ export default function Home() {
 
         <section
           aria-label="Choose a game"
-          className="grid grid-cols-3 gap-2 sm:gap-3"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-5"
         >
           {availableGames.map(({ id, title, labels, icon: Icon }) => (
             <button
@@ -526,8 +562,46 @@ export default function Home() {
               showLobbyJoinForm={selectedPlayMode !== "multiplayer"}
               showModeControls={false}
             />
-          ) : (
+          ) : activeGame === "hangman" ? (
             <HangmanGame
+              key={`${selectedPlayMode}-${activeGame}-${activeLobbySession?.code ?? "no-lobby"}-${joinToken}`}
+              autoJoinCode={
+                selectedPlayMode === "multiplayer"
+                  ? activeLobbySession?.code
+                  : null
+              }
+              initialPlayMode={
+                selectedPlayMode === "multiplayer" ? "lobby" : "solo"
+              }
+              onLobbyLeave={handleLobbyLeave}
+              onLobbyGameChange={handleLobbyGameChange}
+              onLobbySessionChange={handleLobbySessionChange}
+              playerName={playerName}
+              rejoinToken={rejoinToken}
+              showLobbyJoinForm={selectedPlayMode !== "multiplayer"}
+              showModeControls={false}
+            />
+          ) : activeGame === "word-scramble" ? (
+            <WordScrambleGame
+              key={`${selectedPlayMode}-${activeGame}-${activeLobbySession?.code ?? "no-lobby"}-${joinToken}`}
+              autoJoinCode={
+                selectedPlayMode === "multiplayer"
+                  ? activeLobbySession?.code
+                  : null
+              }
+              initialPlayMode={
+                selectedPlayMode === "multiplayer" ? "lobby" : "solo"
+              }
+              onLobbyLeave={handleLobbyLeave}
+              onLobbyGameChange={handleLobbyGameChange}
+              onLobbySessionChange={handleLobbySessionChange}
+              playerName={playerName}
+              rejoinToken={rejoinToken}
+              showLobbyJoinForm={selectedPlayMode !== "multiplayer"}
+              showModeControls={false}
+            />
+          ) : (
+            <WordSearchGame
               key={`${selectedPlayMode}-${activeGame}-${activeLobbySession?.code ?? "no-lobby"}-${joinToken}`}
               autoJoinCode={
                 selectedPlayMode === "multiplayer"
@@ -566,6 +640,8 @@ function rememberArcadeSession(
     "tic-tac-toe": "mini-arcade-tic-tac-toe-session",
     memory: "mini-arcade-memory-session",
     hangman: "mini-arcade-hangman-session",
+    "word-scramble": "mini-arcade-word-scramble-session",
+    "word-search": "mini-arcade-word-search-session",
   };
 
   rememberLobbySession(keyByGame[game], { code, playerId, rejoinToken });

@@ -9,7 +9,12 @@ import {
   hasStoredLobbyByCode,
 } from "@/lib/lobby-store";
 
-export type ArcadeLobbyGame = "tic-tac-toe" | "memory" | "hangman";
+export type ArcadeLobbyGame =
+  | "tic-tac-toe"
+  | "memory"
+  | "hangman"
+  | "word-scramble"
+  | "word-search";
 
 type ArcadeLobbyDirectoryEntry = {
   game: ArcadeLobbyGame;
